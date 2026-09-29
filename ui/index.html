@@ -304,12 +304,29 @@ select.ctl:hover{border-color:var(--primary)}
   align-items:start; padding:16px 0 40px}
 .split.tight{gap:56px}
 .split .copy h2{font-size:44px;line-height:1.14}
+.split.stacked{grid-template-columns:1fr; gap:28px}
+.split.stacked .copy{max-width:760px}
+.split.stacked .copy h2{font-size:34px}
+.split.stacked .copy .lede{font-size:15px; max-width:72ch}
+.state-wrap h2{font-size:26px}
+
+/* the five verdicts side by side */
+.vgrid{display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:1px;
+  background:var(--border-soft); border:1px solid var(--border-soft);
+  border-radius:var(--r-panel); overflow:hidden}
+.vgrid .vrow{display:flex; flex-direction:column; align-items:stretch; gap:14px;
+  padding:20px 20px 22px; background:var(--panel)}
+.vgrid .vrow + .vrow{border-top:0}
+.vgrid .vrow .who .n{font-size:15px}
+.vgrid .vrow .desc{flex:1; padding-left:0; border-left:0; font-size:13.5px}
+.vgrid .vrow .ex .p{font-size:18px}
+.cards.three{grid-template-columns:repeat(3,1fr)}
 
 /* state screens (loading / the three errors) */
 .state-wrap{display:grid; grid-template-columns:1fr 360px; gap:64px; padding:24px 0 8px;
   align-items:center}
 .state-art{display:grid; place-items:center}
-.state-art svg{width:min(330px,100%); height:auto}
+.state-art svg{width:min(210px,100%); height:auto}
 .reasons{display:flex; flex-direction:column; gap:22px}
 .reason{display:flex; gap:16px}
 .reason .ring{color:var(--primary)}
@@ -392,6 +409,7 @@ a.live-sum:hover .v{color:var(--primary)}
   background:color-mix(in srgb,var(--primary) 12%,transparent)}
 
 @media (max-width:1240px){
+  .vgrid{grid-template-columns:repeat(3,minmax(0,1fr))} .cards.three{grid-template-columns:1fr 1fr}
   .work{grid-template-columns:1fr} .ticks{grid-template-columns:1fr}
   .split{grid-template-columns:1fr;gap:36px} .state-wrap{grid-template-columns:1fr;gap:36px}
   .cards.two{grid-template-columns:1fr} .grid-3{grid-template-columns:1fr}
@@ -401,6 +419,7 @@ a.live-sum:hover .v{color:var(--primary)}
   h1{font-size:34px} .split .copy h2{font-size:32px} h2{font-size:26px}
   .grid-2{grid-template-columns:1fr}
   .vrow{grid-template-columns:1fr;gap:12px}
+  .vgrid,.cards.three{grid-template-columns:1fr} .split.stacked .copy h2{font-size:28px}
   .vrow .desc{padding-left:0;border-left:0}
 }
 @media (prefers-reduced-motion:reduce){
@@ -1101,7 +1120,7 @@ function liveSummary() {
 }
 function sectionVerdicts(o) {
   return '<section style="padding-bottom:52px">' +
-    '<div class="split tight" style="padding-bottom:0">' +
+    '<div class="split stacked" style="padding-bottom:0">' +
       '<div class="copy"><div class="eyebrow short">Live quote &amp; verdict states</div>' +
         '<h2>Every quote comes with a <span class="tint">verdict.</span></h2>' +
         '<p class="lede">Datum does not just return a price — it says whether the price ' +
@@ -1111,7 +1130,7 @@ function sectionVerdicts(o) {
         more(o && o.lead ? 'Call the live quote API' : 'Open the live quote panel', '#/quote') +
         liveSummary() +
       '</div>' +
-      '<div>' + verdictRows() + '</div>' +
+      '<div class="vgrid">' + verdictRows() + '</div>' +
     '</div></section>';
 }
 
@@ -1169,7 +1188,7 @@ function sectionTickers(o) {
 
 /* ---- limitations --------------------------------------------------------- */
 function limitationCards() {
-  return '<div class="cards two">' +
+  return '<div class="cards three">' +
     card('target', 'What Datum measures',
       'The distance between the on-chain xStocks price on Solana and the Hyperliquid 24/7 ' +
       'equity perp, hour by hour, from Friday 16:00 ET to Monday 09:30 ET — and how fast ' +
@@ -1203,7 +1222,7 @@ function limitationCards() {
 function sectionLimitations(o) {
   return '<section style="padding-bottom:52px">' +
     '<div class="eyebrow">' + svg('flask') + 'Limitations &amp; methodology</div>' +
-    '<div class="split tight" style="padding:0">' +
+    '<div class="split stacked" style="padding:0">' +
       '<div class="copy"><h2>Built for transparency. <span class="tint">Not perfection.</span></h2>' +
         '<p class="lede">Datum publishes the fit of its own model, names what it threw out, and ' +
         'reports a hypothesis it falsified. A measurement instrument that hides its error bars ' +
@@ -1700,7 +1719,7 @@ function stateBlock(o) {
   return '<section style="padding-bottom:40px">' +
     '<div class="eyebrow">' + esc(o.eyebrow) + '</div>' +
     '<div class="state-wrap">' +
-      '<div style="display:grid;grid-template-columns:1fr 300px;gap:48px;align-items:center">' +
+      '<div style="display:grid;grid-template-columns:1fr 210px;gap:40px;align-items:center">' +
         '<div><h2>' + o.title + '</h2>' +
         '<p class="lede">' + o.body + '</p>' +
         (o.action ? '<div style="margin-top:26px"><button class="btn ghost"' +
