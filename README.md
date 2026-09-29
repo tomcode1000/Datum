@@ -15,6 +15,10 @@ python scripts/export_replay.py    # writes ui/replay.json
 python scripts/serve.py            # http://localhost:8000
 ```
 
+Hosted, the same page and API run on Vercel with no build step: `ui/` is served
+statically and `api/` holds one Python function per endpoint, each calling
+`oracle/service.py` exactly as the local server does (`vercel.json`).
+
 ---
 
 ## The problem
@@ -144,10 +148,16 @@ GET /api/quote/TSLA
 }
 ```
 
-`GET /api/quotes` returns the same object for every ticker in the panel. The
-service sweeps them one at a time in the background (every 5 minutes, to stay
-inside GeckoTerminal's 30 requests a minute) and serves the latest finished
-sweep; the Cross-ticker page shows it as a live verdict table.
+`GET /api/quotes` returns the same object for every ticker in the panel. A live
+quote costs one Hyperliquid call and one GeckoTerminal call for all pools at
+once; a pool that has not traded within the hour costs one more call for its
+exact last trade. The mint and pool addresses come from `pools.json`
+(`python scripts/resolve_pools.py`), so no lookups are spent on them. A sweep
+is held for five minutes, in the service and at the CDN when hosted.
+
+`stale_hours` is exact once a pool has been quiet for over an hour, which is
+where the `STALE` verdict is decided. For an active pool it is the shortest
+activity window holding a trade (5, 15, 30 or 60 minutes), so an upper bound.
 
 The band **adapts to liquidity**: TSLA at $5,889/hr gets ±27 bps, AVGO at $32/hr
 gets ±90 bps. `STALE` is a distinct verdict from `LAGGED` on purpose — below a

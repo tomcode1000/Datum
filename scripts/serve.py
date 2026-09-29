@@ -9,9 +9,6 @@
 """
 import json
 import sys
-import threading
-import time
-from dataclasses import asdict
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -19,27 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from oracle.service import quote, quote_all  # noqa: E402
-
-# Quoting every ticker takes a few minutes under the upstream rate limit, too
-# long to do inside a request. A background thread sweeps on a timer and
-# /api/quotes serves the most recent finished sweep.
-SWEEP_EVERY = 300
-_sweep = {"body": None}
-
-
-def _sweeper() -> None:
-    while True:
-        try:
-            tickers = [t["ticker"] for t in
-                       json.loads((ROOT / "panel.json").read_text())["tickers"]]
-            out = [q if isinstance(q, dict) else asdict(q)
-                   for q in quote_all(tickers)]
-            _sweep["body"] = json.dumps({"at": int(time.time() * 1000),
-                                         "every_s": SWEEP_EVERY, "quotes": out})
-        except Exception as exc:          # keep the last good sweep
-            print(f"sweep failed: {type(exc).__name__}: {exc}")
-        time.sleep(SWEEP_EVERY)
+from oracle.service import quote, sweep_json  # noqa: E402
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -53,10 +30,11 @@ class Handler(SimpleHTTPRequestHandler):
                            status=500)
             return
         if self.path == "/api/quotes":
-            if _sweep["body"] is None:
-                self._json(json.dumps({"pending": True}), status=503)
-            else:
-                self._json(_sweep["body"])
+            try:
+                self._json(sweep_json())
+            except Exception as exc:
+                self._json(json.dumps({"error": f"{type(exc).__name__}: {exc}"}),
+                           status=500)
             return
         if self.path == "/api/panel":
             self._json((ROOT / "panel.json").read_text())
@@ -83,7 +61,6 @@ def main() -> None:
     print(f"  UI     http://localhost:{port}/")
     print(f"  quote  http://localhost:{port}/api/quote/TSLA")
     print(f"  all    http://localhost:{port}/api/quotes")
-    threading.Thread(target=_sweeper, daemon=True).start()
     ThreadingHTTPServer(("", port), handler).serve_forever()
 
 

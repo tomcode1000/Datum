@@ -5,13 +5,19 @@ Every source we use is free and keyless, but rate-limited (GeckoTerminal is
 inside the limits while iterating on the model.
 """
 import hashlib
+import http.client
 import json
+import os
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
-CACHE = Path(__file__).resolve().parent.parent / "cache"
+# A hosted function's filesystem is read-only apart from /tmp, and that is
+# wiped between cold starts, so there the cache only saves repeat calls within
+# one warm instance.
+CACHE = (Path("/tmp/datum-cache") if os.environ.get("VERCEL")
+         else Path(__file__).resolve().parent.parent / "cache")
 HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
 # Jupiter rejects requests without a User-Agent with a 403, so HEADERS is
 # not optional here.
@@ -34,8 +40,11 @@ def _load(key: str, max_age: float | None):
 
 
 def _store(key: str, value) -> None:
-    CACHE.mkdir(exist_ok=True)
-    _cache_path(key).write_text(json.dumps(value))
+    try:
+        CACHE.mkdir(exist_ok=True)
+        _cache_path(key).write_text(json.dumps(value))
+    except OSError:
+        pass          # a cache that cannot be written is only a slower cache
 
 
 def _attempt(req: urllib.request.Request, tries: int, pause: float):
@@ -44,7 +53,9 @@ def _attempt(req: urllib.request.Request, tries: int, pause: float):
         try:
             with urllib.request.urlopen(req, timeout=60) as r:
                 return json.load(r)
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+        # OSError covers URLError, timeouts and TLS resets (an SSLError is not
+        # a URLError, and one escaped the retry here during a sweep).
+        except (OSError, http.client.HTTPException, json.JSONDecodeError) as e:
             last = e
             if i < tries - 1:
                 time.sleep(pause * (i + 1))

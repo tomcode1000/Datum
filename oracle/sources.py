@@ -98,7 +98,7 @@ def xstock_candles(pool: str, pages: int = 4,
     """
     out: dict[int, tuple[float, float]] = {}
     before = int(time.time())
-    for _ in range(pages):
+    for page in range(pages):
         url = (f"{GT}/pools/{pool}/ohlcv/hour"
                f"?aggregate=1&limit=1000&before_timestamp={before}")
         cached = is_cached(url, max_age=_HISTORY_TTL)
@@ -108,6 +108,38 @@ def xstock_candles(pool: str, pages: int = 4,
         for ts, _o, _h, _l, close, vol in rows:
             out[ts * 1000] = (float(close), float(vol))
         before = min(r[0] for r in rows) - 1
-        if not cached:          # only the rate limiter needs the pause
+        if not cached and page < pages - 1:   # pause between pages, not after
             time.sleep(polite)
     return out
+
+
+# Activity windows GeckoTerminal reports per pool, shortest first, in hours.
+ACTIVITY_WINDOWS = (("m5", 5 / 60), ("m15", 0.25), ("m30", 0.5), ("h1", 1.0))
+
+
+def xstock_pools_live(pools: list[str]) -> dict[str, dict]:
+    """Current price and trade activity for many pools, one request per 30.
+
+    Live quoting used to fetch a page of candles per ticker; sixteen of those
+    in a burst ran straight into the 30/min limit. This is one call."""
+    out: dict[str, dict] = {}
+    for i in range(0, len(pools), 30):
+        chunk = pools[i:i + 30]
+        data = get(f"{GT}/pools/multi/{','.join(chunk)}", cache=False,
+                   tries=3, pause=3.0)["data"]
+        for d in data:
+            out[d["id"].split("_")[-1]] = d["attributes"]
+    return out
+
+
+def pool_last_trade_ms(pool: str) -> int | None:
+    """Epoch ms of the pool's most recent trade within the last 24h, or None."""
+    rows = get(f"{GT}/pools/{pool}/trades", cache=False,
+               tries=3, pause=3.0)["data"]
+    stamps = [_iso_ms(r["attributes"]["block_timestamp"]) for r in rows]
+    return max(stamps) if stamps else None
+
+
+def _iso_ms(stamp: str) -> int:
+    from datetime import datetime
+    return int(datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp() * 1000)

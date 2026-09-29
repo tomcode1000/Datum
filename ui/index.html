@@ -355,7 +355,10 @@ select.ctl:hover{border-color:var(--primary)}
 .kv .v{font-weight:600}
 
 /* live sweep of every ticker (/api/quotes) */
-.lrow{display:grid; grid-template-columns:150px 150px repeat(3,minmax(0,1fr)) 80px;
+.live-sum{display:flex;margin-top:28px;padding-top:20px;border-top:1px solid var(--border-soft);
+  color:inherit;text-decoration:none}
+a.live-sum:hover .v{color:var(--primary)}
+.lrow{display:grid; grid-template-columns:130px 170px repeat(3,minmax(0,1fr)) 110px;
   align-items:center; gap:18px; padding:12px 0; border-bottom:1px solid var(--border-soft);
   font-size:14px}
 .lrow.head{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
@@ -540,6 +543,12 @@ const liq = n => n == null ? '—' :
   n >= 1e6 ? '$' + fix(n / 1e6, 2) + 'M' : '$' + fix(n / 1e3, 0) + 'K';
 const conv = n => n == null ? '—' : fix(n, 3);
 const hrs = n => n == null ? '—' : fix(n, 1) + 'h';
+// Under an hour the service reports the activity window a trade fell in, so
+// the figure is a bound and is shown as one.
+const ago = n => n == null ? '—' : n <= 1 ? 'within ' + (n >= 1 ? '1h' : Math.round(n * 60) + ' min') :
+  n >= 24 ? 'over 24h ago' : fix(n, 1) + 'h ago';
+const etTime = ms => new Date(ms).toLocaleTimeString('en-US',
+  {hour: '2-digit', minute: '2-digit', timeZone: 'America/New_York'});
 
 /* ---- market state ------------------------------------------------------- *
  * Read from the clock, never faked. Three states, because an OK verdict only
@@ -1034,20 +1043,37 @@ function sectionMeasure(o) {
 }
 
 /* ---- the five verdicts --------------------------------------------------- */
+/* A ticker the latest live sweep put in this state, if any: the widest
+   deviation for a measurement, the first by name for an absence. */
+function liveExample(k) {
+  if (!SWEEP || !SWEEP.quotes) return null;
+  const qs = SWEEP.quotes.filter(q => q.verdict === k)
+    .sort((a, b) => a.ticker < b.ticker ? -1 : 1);
+  if (!qs.length) return null;
+  if (k !== 'OK' && k !== 'LAGGED') return qs[0];
+  return qs.reduce((a, b) => Math.abs(b.deviation_bps) > Math.abs(a.deviation_bps) ? b : a);
+}
 function verdictRows() {
   return VERDICTS.map(v => {
-    const s = wk().series;
+    let s = wk().series;
+    const lx = liveExample(v.k);
     let ex;
     if (v.k === 'OK' || v.k === 'LAGGED') {
-      const sp = specimen(v.k);
+      let sp = specimen(v.k);
+      if (lx) {
+        sp = {pool: lx.pool, dev: lx.deviation_bps, live: true};
+        const t = DATA.tickers[lx.ticker];
+        if (t) s = t.weekends[t.weekends.length - 1].series;
+      }
       ex = '<div><div class="ex"><div class="k">' +
-        (sp.live ? 'Live quote' : 'Specimen quote') + '</div>' +
+        (lx ? 'Live · ' + esc(lx.ticker) : sp.live ? 'Live quote' : 'Specimen quote') + '</div>' +
         '<div class="p num">' + usd(sp.pool) + '</div>' +
         '<div class="d">Deviation <b class="num">' + bps(sp.dev) + '</b></div></div>' +
         '<div class="spark">' + spark(s.slice(-24), 140, 30,
           {ref: 'var(--vc)', pool: 'var(--vc)'}) + '</div></div>';
     } else {
-      ex = '<div><div class="ex"><div class="k">Specimen quote</div>' +
+      ex = '<div><div class="ex"><div class="k">' +
+        (lx ? 'Live · ' + esc(lx.ticker) : 'Specimen quote') + '</div>' +
         '<div class="p num">—</div>' +
         '<div class="d">Deviation <b>N/A</b></div></div>' +
         '<div class="spark"><svg viewBox="0 0 140 30" preserveAspectRatio="none" fill="none">' +
@@ -1060,6 +1086,19 @@ function verdictRows() {
       '<div class="desc">' + esc(v.desc) + '</div>' + ex + '</div>';
   }).join('');
 }
+function liveSummary() {
+  if (SWEEP === null || SWEEP === 'loading') {
+    return '<div class="live-sum">' + foot('pulse', 'Live now', 'quoting every ticker…') + '</div>';
+  }
+  if (SWEEP.error) return '';
+  const count = {};
+  SWEEP.quotes.forEach(q => { if (q.verdict) count[q.verdict] = (count[q.verdict] || 0) + 1; });
+  return '<a class="live-sum" href="#/tickers">' +
+    foot('pulse', 'Live now · ' + VERDICTS.filter(v => count[v.k])
+      .map(v => count[v.k] + ' ' + v.k).join(' · '),
+      SWEEP.quotes.length + ' tickers at ' + etTime(SWEEP.at) + ' ET · see every verdict') +
+    '</a>';
+}
 function sectionVerdicts(o) {
   return '<section style="padding-bottom:52px">' +
     '<div class="split tight" style="padding-bottom:0">' +
@@ -1070,6 +1109,7 @@ function sectionVerdicts(o) {
         'absence of measurement, which is a different thing and is never dressed up as a ' +
         'number.</p>' +
         more(o && o.lead ? 'Call the live quote API' : 'Open the live quote panel', '#/quote') +
+        liveSummary() +
       '</div>' +
       '<div>' + verdictRows() + '</div>' +
     '</div></section>';
@@ -1529,9 +1569,6 @@ async function callSweep() {
   try {
     const r = await fetch('/api/quotes');
     const d = await r.json();
-    // The service sweeps in the background; until its first pass finishes
-    // (a few minutes after start) it answers 503 pending, so ask again.
-    if (d.pending) { setTimeout(callSweep, 5000); return; }
     if (d.error) throw new Error(d.error);
     SWEEP = d;
     API = true;
@@ -1539,14 +1576,14 @@ async function callSweep() {
   } catch (e) {
     SWEEP = {error: e.message};
   }
-  if (current === 'tickers') render(); else buildFoot();
+  if (current === 'tickers' || current === 'overview' || current === 'states') render();
+  else buildFoot();
 }
 function sectionSweep() {
   let body;
   if (SWEEP === null || SWEEP === 'loading') {
     body = '<p style="color:var(--text-2);font-size:14px">Calling ' +
-      '<span class="num">/api/quotes</span> — the service quotes every ticker in turn to stay ' +
-      'inside the upstream rate limit, so the first pass takes a few minutes…</p>';
+      '<span class="num">/api/quotes</span> — one live quote per ticker…</p>';
   } else if (SWEEP.error) {
     body = '<div style="display:flex;gap:14px;align-items:flex-start">' +
       '<span class="ring sm" style="color:var(--warning)">' + svg('alert') + '</span>' +
@@ -1573,11 +1610,10 @@ function sectionSweep() {
           '<div class="r num">' + usd(q.reference) + '</div>' +
           '<div class="r num">' + bps(q.deviation_bps) + ' / ' + band(q.expected_bps) + '</div>' +
           '<div class="r num" style="color:var(--muted)">' +
-            (q.stale_hours == null ? '—' : hrs(q.stale_hours) + ' ago') + '</div></div>';
+            ago(q.stale_hours) + '</div></div>';
       }).join('') +
       '<div style="display:flex;gap:40px;flex-wrap:wrap;padding-top:20px">' +
-        foot('clock', 'As of ' + new Date(SWEEP.at).toLocaleTimeString('en-US',
-          {hour: '2-digit', minute: '2-digit', timeZone: 'America/New_York'}) + ' ET',
+        foot('clock', 'As of ' + etTime(SWEEP.at) + ' ET',
           qs.length + ' tickers · refreshed every ' + Math.round((SWEEP.every_s || 300) / 60) +
           ' min') +
         foot('layers', Object.keys(count).map(k => count[k] + ' ' + k).join(' · '),
@@ -1841,7 +1877,7 @@ function render() {
   // The live quote page calls the service itself rather than waiting for a
   // click, so the wiring is exercised the moment a judge lands on it.
   if (current === 'quote' && !QUOTED[S.ticker]) callApi();
-  if (current === 'tickers' && SWEEP === null) callSweep();
+  if (SWEEP === null) callSweep();
 }
 
 function route() {
