@@ -1248,13 +1248,9 @@ function viewOverview() {
   return '<section class="split">' +
       '<div class="copy">' +
         '<div class="eyebrow short">The problem</div>' +
-        '<h2>Tokenized US stocks trade 24/7. The market that prices them is open ' +
-          '<span class="tint">' + FACT.gapHours + ' hours a week.</span></h2>' +
-        '<p class="lede">From Friday 16:00 ET to Monday 09:30 ET nothing reprices them, ' +
-          'but they keep trading on-chain anyway — so their price drifts away from ' +
-          'what they are actually worth.</p>' +
-        '<p class="lede" style="margin-top:14px">Datum measures that drift and tells you ' +
-          'when the on-chain price cannot be trusted.</p>' +
+        '<h2>Tokenized stocks never close. <span class="tint">Their market does.</span></h2>' +
+        '<p class="lede">Every weekend the on-chain price drifts with nothing to anchor ' +
+          'it. Datum tells you when it can’t be trusted.</p>' +
         '<div style="margin-top:28px;display:flex;gap:12px;flex-wrap:wrap">' +
           '<button class="btn primary" data-go="#/measurement">See the measurement' +
             svg('arrow') + '</button>' +
