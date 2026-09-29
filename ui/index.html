@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Datum — a weekend oracle for tokenized equities</title>
+<title>Datum · a weekend oracle for tokenized equities</title>
 <meta name="description" content="Tokenized US stocks trade 24/7. The market that prices them is open 32.5 hours a week. Datum measures how wrong the on-chain price gets in the gap.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2300E5FF' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M2 16h20'/%3E%3Cpath d='M4 16c3.4 0 4.2-9 8-9s4.6 9 8 9'/%3E%3C/svg%3E">
 <style>
 /* ===========================================================================
-   DATUM — design tokens.
+   DATUM: design tokens.
    Dark is primary, light is the alternate; the two themes differ only here.
    =========================================================================== */
 :root{
@@ -21,7 +21,7 @@
 
   --text:#FFFFFF; --text-2:#A7B6CC; --muted:#76869B;
 
-  --ref:#EAF2FF;            /* the datum — deliberately the brightest line */
+  --ref:#EAF2FF;            /* the datum, deliberately the brightest line */
   --pool:#4C6FFF;           /* the thing being measured against it         */
   --band:rgba(76,111,255,.20);
   --band-line:rgba(124,139,255,.45);
@@ -439,7 +439,7 @@ a.live-sum:hover .v{color:var(--primary)}
 
 <div class="app">
   <header class="hdr">
-    <a class="lockup" href="#/overview" aria-label="Datum — home">
+    <a class="lockup" href="#/overview" aria-label="Datum home">
       <svg viewBox="0 0 46 26" fill="none" stroke="currentColor"
            stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
         <path d="M1 18.5h44"/>
@@ -453,7 +453,7 @@ a.live-sum:hover .v{color:var(--primary)}
       <span class="state-pill" id="market-pill" data-state="open">
         <span class="dot" aria-hidden="true"></span><span id="market-text">Market open</span>
       </span>
-      <span class="clock num" id="clock">—</span>
+      <span class="clock num" id="clock"></span>
       <button class="icon-btn" id="theme" type="button" aria-label="Switch to light theme">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
              stroke-linecap="round" aria-hidden="true">
@@ -474,7 +474,7 @@ a.live-sum:hover .v{color:var(--primary)}
 <script>
 "use strict";
 /* ===========================================================================
-   DATUM — one page, its states, two themes.
+   DATUM: one page, its states, two themes.
    No framework, no chart library, no external requests: the whole front end is
    this file plus replay.json, so it opens offline and records cleanly.
    =========================================================================== */
@@ -550,21 +550,21 @@ const ring = (n, cls) => '<span class="ring ' + (cls || '') + '">' + svg(n) + '<
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const fix = (n, d) => n == null || !isFinite(n) ? '—' :
+const fix = (n, d) => n == null || !isFinite(n) ? 'N/A' :
   n.toLocaleString('en-US', {minimumFractionDigits: d, maximumFractionDigits: d});
-const bps = n => n == null ? '—' : (n > 0 ? '+' : n < 0 ? '−' : '') +
+const bps = n => n == null ? 'N/A' : (n > 0 ? '+' : n < 0 ? '−' : '') +
   fix(Math.abs(n), 0) + ' bps';
-const mag = n => n == null ? '—' : fix(n, 0) + ' bps';
-const band = n => n == null ? '—' : '±' + fix(n, 0) + ' bps';
-const usd = n => n == null ? '—' : '$' + fix(n, 2);
-const vol = n => n == null ? '—' : '$' + fix(n, 0) + '/hr';
-const liq = n => n == null ? '—' :
+const mag = n => n == null ? 'N/A' : fix(n, 0) + ' bps';
+const band = n => n == null ? 'N/A' : '±' + fix(n, 0) + ' bps';
+const usd = n => n == null ? 'N/A' : '$' + fix(n, 2);
+const vol = n => n == null ? 'N/A' : '$' + fix(n, 0) + '/hr';
+const liq = n => n == null ? 'N/A' :
   n >= 1e6 ? '$' + fix(n / 1e6, 2) + 'M' : '$' + fix(n / 1e3, 0) + 'K';
-const conv = n => n == null ? '—' : fix(n, 3);
-const hrs = n => n == null ? '—' : fix(n, 1) + 'h';
+const conv = n => n == null ? 'N/A' : fix(n, 3);
+const hrs = n => n == null ? 'N/A' : fix(n, 1) + 'h';
 // Under an hour the service reports the activity window a trade fell in, so
 // the figure is a bound and is shown as one.
-const ago = n => n == null ? '—' : n <= 1 ? 'within ' + (n >= 1 ? '1h' : Math.round(n * 60) + ' min') :
+const ago = n => n == null ? 'N/A' : n <= 1 ? 'within ' + (n >= 1 ? '1h' : Math.round(n * 60) + ' min') :
   n >= 24 ? 'over 24h ago' : fix(n, 1) + 'h ago';
 const etTime = ms => new Date(ms).toLocaleTimeString('en-US',
   {hour: '2-digit', minute: '2-digit', timeZone: 'America/New_York'});
@@ -876,16 +876,16 @@ const VERDICTS = [
    desc: 'The quote sits inside the expected deviation band for this pool’s liquidity. It can be priced from.',
    advice: 'Quote is −26bps vs reference, within the ±27bps typical for this liquidity.'},
   {k: 'LAGGED', icon: 'clock', sub: 'Outside the band',
-   desc: 'Outside the band, but the pool is still trading. Expect convergence over 1–12h and price from the reference meanwhile.',
-   advice: 'Quote is +84bps vs reference, outside the ±27bps typical for this liquidity. Expect convergence over 1–12h; price from the reference instead.'},
+   desc: 'Outside the band, but the pool is still trading. Expect convergence over 1 to 12h and price from the reference meanwhile.',
+   advice: 'Quote is +84bps vs reference, outside the ±27bps typical for this liquidity. Expect convergence over 1 to 12h; price from the reference instead.'},
   {k: 'STALE', icon: 'hourglass', sub: 'Not a price at all',
-   desc: 'The pool has not traded for over ' + FACT.staleAfterH + ' hours. This is not a worse LAGGED — the quote is absent, not wrong.',
+   desc: 'The pool has not traded for over ' + FACT.staleAfterH + ' hours. This is not a worse LAGGED. The quote is absent, not wrong.',
    advice: 'Pool has not traded for 7.4h. Treat the on-chain quote as absent and price from the reference.'},
   {k: 'NO_POOL', icon: 'ban', sub: 'Nothing genuine found',
    desc: 'No genuine pool. A search for TSLAx returns four counterfeits, some priced at $0.000005; the backend rejects them rather than quoting one.',
    advice: 'No genuine xStocks pool found; reference price only.'},
   {k: 'NO_REFERENCE', icon: 'eyeoff', sub: 'No datum exists',
-   desc: 'No 24/7 reference market for this ticker. There is no datum, so nothing can be said — and no empty price slot is shown.',
+   desc: 'No 24/7 reference market for this ticker. There is no datum, so nothing can be said, and no empty price slot is shown.',
    advice: 'No 24/7 reference market for this ticker.'}
 ];
 const V = k => VERDICTS.find(v => v.k === k);
@@ -951,7 +951,7 @@ function wireChart() {
   wireReadout(box, t, w, buildChart(t, w), buildDeviation(t, w));
 }
 
-/* Per-day mean deviation — the "when in the weekend did it happen" question. */
+/* Per-day mean deviation, the "when in the weekend did it happen" question. */
 function dayBreakdown(w) {
   const by = {};
   w.series.forEach(p => {
@@ -969,7 +969,7 @@ function dayBreakdown(w) {
    Where a comp shows the same panel on both, it is the same function here, so
    the two surfaces cannot drift into two design systems.
 
-   Each takes {lead} — true on the landing, where the section carries its own
+   Each takes {lead}, true on the landing, where the section carries its own
    heading and a way through to the product page that owns it.
    =========================================================================== */
 const more = (label, href) =>
@@ -1039,7 +1039,7 @@ function convGloss() {
     'close the gap entirely within the hour. ' + esc(S.ticker) + ' sits at <b class="num">' +
     conv(t.convergence_1h) + '</b>, and across all ' + FACT.nTickers + ' tickers replayed here ' +
     'the range is <b class="num">' + conv(convRange()[0]) + '</b> to <b class="num">' +
-    conv(convRange()[1]) + '</b> — every one of them negative, which is the finding.' +
+    conv(convRange()[1]) + '</b>, every one of them negative, which is the finding.' +
     '</p></div></div>';
 }
 
@@ -1093,7 +1093,7 @@ function verdictRows() {
     } else {
       ex = '<div><div class="ex"><div class="k">' +
         (lx ? 'Live · ' + esc(lx.ticker) : 'Specimen quote') + '</div>' +
-        '<div class="p num">—</div>' +
+        '<div class="p num">N/A</div>' +
         '<div class="d">Deviation <b>N/A</b></div></div>' +
         '<div class="spark"><svg viewBox="0 0 140 30" preserveAspectRatio="none" fill="none">' +
         '<line x1="2" y1="15" x2="138" y2="15" stroke="currentColor" stroke-width="1.6" ' +
@@ -1123,7 +1123,7 @@ function sectionVerdicts(o) {
     '<div class="split stacked" style="padding-bottom:0">' +
       '<div class="copy"><div class="eyebrow short">Live quote &amp; verdict states</div>' +
         '<h2>Every quote comes with a <span class="tint">verdict.</span></h2>' +
-        '<p class="lede">Datum does not just return a price — it says whether the price ' +
+        '<p class="lede">Datum does not just return a price. It says whether the price ' +
         'can be used. Two of these are measurements with a status. The other three are an ' +
         'absence of measurement, which is a different thing and is never dressed up as a ' +
         'number.</p>' +
@@ -1159,7 +1159,7 @@ function sectionTickers(o) {
         '<span class="tint">all ' + names.length + ' tickers.</span></h2>' +
         '<p class="lede">Every ticker in the panel separates from its reference during the ' +
         'gap and closes back toward it at the Monday open. The size differs by an order of ' +
-        'magnitude — that is what the liquidity model is for — but the direction ' +
+        'magnitude, which is what the liquidity model is for, but the direction ' +
         'does not.</p>' +
         more(o && o.lead ? 'See every ticker' : 'How this was measured',
              o && o.lead ? '#/tickers' : '#/methodology') + '</div>' +
@@ -1191,10 +1191,10 @@ function limitationCards() {
   return '<div class="cards three">' +
     card('target', 'What Datum measures',
       'The distance between the on-chain xStocks price on Solana and the Hyperliquid 24/7 ' +
-      'equity perp, hour by hour, from Friday 16:00 ET to Monday 09:30 ET — and how fast ' +
+      'equity perp, hour by hour, from Friday 16:00 ET to Monday 09:30 ET, and how fast ' +
       'that distance closes once the cash market reopens.') +
     card('ban', 'What it does not claim',
-      'It does not predict price. It is <b>not a trading strategy</b> — median weekend ' +
+      'It does not predict price. It is <b>not a trading strategy</b>: median weekend ' +
       'volume of ' + vol(FACT.volLo) + ' to ' + vol(FACT.volHi) + ' means fees and slippage ' +
       'eat the spread. It is pricing and risk infrastructure.') +
     card('scale', 'The model fit is soft, and says so',
@@ -1241,13 +1241,13 @@ function sectionWhy() {
     '<div class="cards two">' +
       card('cal', 'The weekend is the uncovered hole',
         'CME index futures are shut from Friday 17:00 ET to Sunday 18:00 ET, and Pyth’s ' +
-        'standard equity feeds run an overnight session Sunday–Thursday. Weeknights are ' +
+        'standard equity feeds run an overnight session Sunday to Thursday. Weeknights are ' +
         'already covered by free infrastructure. The weekend, roughly 48 hours every week, ' +
         'is not.') +
       card('target', 'The reference is validated, not assumed',
         'Across <b>' + FACT.refWeekends + ' weekends, ' + FACT.refObs + ' observations</b>, ' +
         'weekend drift on the Hyperliquid 24/7 perp is retained through the following Monday ' +
-        'US open — retention ' + FACT.refRetention.toFixed(3) + ', r ' +
+        'US open, with retention ' + FACT.refRetention.toFixed(3) + ', r ' +
         FACT.refR.toFixed(3) + '. It is price discovery, not noise.') +
       card('db', 'Who is actually reading this price',
         'A lending protocol valuing collateral, a liquidation engine, a NAV process. On a ' +
@@ -1287,7 +1287,7 @@ function viewOverview() {
 }
 
 /* ===========================================================================
-   VIEW — MEASUREMENT
+   VIEW: MEASUREMENT
    =========================================================================== */
 function viewMeasurement() {
   const t = tk(), w = wk(), s = w.series, n = s.length;
@@ -1351,7 +1351,7 @@ const kv = (k, v) => '<div class="kv"><span class="k">' + esc(k) +
   '</span><span class="v num">' + v + '</span></div>';
 
 /* ===========================================================================
-   VIEW — LIVE QUOTE
+   VIEW: LIVE QUOTE
    OK and LAGGED are measurements with a status. STALE, NO_POOL and
    NO_REFERENCE are an absence of measurement, so they get a different panel
    shape rather than the same panel with a different coloured badge.
@@ -1563,14 +1563,14 @@ async function callApi() {
       'align-items:flex-start;border-color:var(--warning)">' +
       '<span class="ring sm" style="color:var(--warning)">' + svg('alert') + '</span>' +
       '<div style="font-size:14px;line-height:1.6"><b>The API is not running.</b> ' +
-      'Start it with <span class="num">python scripts/serve.py</span> — the states below ' +
+      'Start it with <span class="num">python scripts/serve.py</span>. The states below ' +
       'are specimens drawn from measured weekends.<br>' +
       '<span style="color:var(--muted)">' + esc(e.message) + '</span></div></div>';
   }
 }
 
 /* ===========================================================================
-   VIEW — CROSS-TICKER
+   VIEW: CROSS-TICKER
    =========================================================================== */
 function viewTickers() {
   return sectionTickers() + '<div class="hr"></div>' + sectionSweep();
@@ -1598,7 +1598,7 @@ function sectionSweep() {
   let body;
   if (SWEEP === null || SWEEP === 'loading') {
     body = '<p style="color:var(--text-2);font-size:14px">Calling ' +
-      '<span class="num">/api/quotes</span> — one live quote per ticker…</p>';
+      '<span class="num">/api/quotes</span>, one live quote per ticker…</p>';
   } else if (SWEEP.error) {
     body = '<div style="display:flex;gap:14px;align-items:flex-start">' +
       '<span class="ring sm" style="color:var(--warning)">' + svg('alert') + '</span>' +
@@ -1645,7 +1645,7 @@ const foot = (icon, big, small) =>
   '<div class="v">' + esc(small) + '</div></div></div>';
 
 /* ===========================================================================
-   VIEW — METHODOLOGY
+   VIEW: METHODOLOGY
    The limitations are not in a footer and not in a collapsed disclaimer. The
    honesty is the product.
    =========================================================================== */
@@ -1660,7 +1660,7 @@ function viewMethod() {
       claim('check', 'var(--success)', 'Solid',
         'Universal weekend convergence, deepening with horizon. Every ticker measured closes ' +
         'back toward its reference, and the 6h and 12h slopes are steeper than the 1h.') +
-      claim('alert', 'var(--warning)', 'Soft — indicative only',
+      claim('alert', 'var(--warning)', 'Soft, indicative only',
         'Liquidity predicts deviation at R² ' + fix(FACT.r2, 2) + (FACT.fitN ? ' with n = ' + FACT.fitN : '') +
         '. Directionally right, statistically thin. Treated as a prior, not a measurement.') +
       claim('ban', 'var(--danger)', 'Dropped',
@@ -1685,7 +1685,7 @@ const claim = (icon, colour, title, body) =>
   body + '</p></div></div>';
 
 /* ===========================================================================
-   VIEW — STATES
+   VIEW: STATES
    The five verdicts. The loading and failure screens are real (render() and
    the boot sequence draw them with stateBlock) but are not catalogued here.
    =========================================================================== */
@@ -1794,7 +1794,7 @@ function render() {
       eyebrow: 'Data missing', icon: 'file', colour: 'var(--warning)',
       title: 'The measured weekends <span class="tint">could not be loaded.</span>',
       body: 'replay.json is missing or unreadable, so there is nothing to replay. It is ' +
-        'generated by the build scripts — run them and it reappears.',
+        'generated by the build scripts. Run them and it reappears.',
       listTitle: 'Possible reasons',
       list: [
         ['repo', 'The cache is gitignored', 'cache/ holds ~31MB of API responses and is not committed.'],
@@ -1833,7 +1833,7 @@ function route() {
   document.body.dataset.shell = r.shell || 'app';
   $('#view').className = 'view' + (r.shell === 'landing' ? ' landing' : '');
   $('#descriptor').textContent = r.descriptor || 'Market intelligence. Deeper.';
-  document.title = 'Datum — ' + r.label;
+  document.title = 'Datum · ' + r.label;
   render();
   $('#view').focus();
   window.scrollTo(0, 0);
