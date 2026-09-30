@@ -227,6 +227,14 @@ select.ctl{
   background-size:16px;
 }
 select.ctl:hover{border-color:var(--primary)}
+textarea.ctl{
+  width:100%; min-height:96px; padding:13px 14px; border-radius:var(--r-ctl);
+  border:1px solid var(--border); background:var(--panel-2); color:var(--text);
+  font:inherit; font-size:15px; line-height:1.55; resize:vertical;
+}
+textarea.ctl:hover,textarea.ctl:focus{border-color:var(--primary); outline:none}
+.ask-answer{font-size:16px; line-height:1.7; color:var(--text)}
+.ask-answer .act{display:block; margin-top:12px; color:var(--primary); font-weight:600}
 .ctl-label{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;
   color:var(--muted); margin-bottom:8px; display:block}
 
@@ -576,7 +584,8 @@ const conv = n => n == null ? 'N/A' : fix(n, 3);
 const hrs = n => n == null ? 'N/A' : fix(n, 1) + 'h';
 // Under an hour the service reports the activity window a trade fell in, so
 // the figure is a bound and is shown as one.
-const ago = n => n == null ? 'N/A' : n <= 1 ? 'within ' + (n >= 1 ? '1h' : Math.round(n * 60) + ' min') :
+// Bitget reports the hour a trade fell in, so 0 there means "this hour".
+const ago = n => n == null ? 'N/A' : n <= 1 ? 'within ' + (n >= 1 || n === 0 ? '1h' : Math.round(n * 60) + ' min') :
   n >= 24 ? 'over 24h ago' : fix(n, 1) + 'h ago';
 const etTime = ms => new Date(ms).toLocaleTimeString('en-US',
   {hour: '2-digit', minute: '2-digit', timeZone: 'America/New_York'});
@@ -1620,6 +1629,108 @@ async function callApi() {
 }
 
 /* ===========================================================================
+   VIEW: ASK DATUM
+   A question in plain English, answered by Qwen from Datum's live verdicts on
+   both venues. The model explains; Datum decides. If the model is missing,
+   fails, or names a verdict Datum did not return, the page shows Datum's own
+   advice and says why (oracle/ask.py).
+   =========================================================================== */
+const ASK = {q: '', busy: false, res: null};
+const ASK_SUGGEST = [
+  'Can I liquidate a TSLA position on Bitget right now?',
+  'Which venue tracks NVDA more closely at weekends?',
+  'Is it safe to value AVGO collateral from the token price?',
+  'Why would COIN be LAGGED on one venue and OK on the other?'
+];
+function viewAsk() {
+  const chips = ASK_SUGGEST.map((q, i) =>
+    '<button class="chip" data-ask="' + i + '">' + esc(q) + '</button>').join('');
+  return '<section>' +
+    '<div class="eyebrow">' + svg('bulb') + 'Ask Datum · Qwen</div>' +
+    '<h2>Ask it <span class="tint">in plain English.</span></h2>' +
+    '<p class="lede" style="max-width:70ch">Ask about TSLA, NVDA or any other ticker on ' +
+      'this site. Qwen writes the answer from Datum’s live verdicts on Solana and Bitget ' +
+      'and the measured history behind them. It can explain a verdict. It can never change one.</p>' +
+    '<div class="panel" style="margin-top:26px">' +
+      '<label class="ctl-label" for="ask-q">Your question</label>' +
+      '<textarea class="ctl" id="ask-q" maxlength="400" placeholder="e.g. Can I liquidate a TSLA ' +
+        'position on Bitget right now?">' + esc(ASK.q) + '</textarea>' +
+      '<div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;margin-top:16px">' +
+        '<div style="flex:1;min-width:280px"><span class="ctl-label">Try</span>' +
+          '<div class="pill-row">' + chips + '</div></div>' +
+        '<button class="btn primary" id="ask-go"' + (ASK.busy ? ' disabled' : '') + '>' +
+          svg('bulb') + (ASK.busy ? 'Asking…' : 'Ask Datum') + '</button>' +
+      '</div>' +
+    '</div>' +
+    '<div id="ask-out" style="margin-top:20px">' + askResult() + '</div>' +
+  '</section>';
+}
+function askResult() {
+  const r = ASK.res;
+  if (ASK.busy) return '<div class="panel" style="color:var(--text-2);font-size:14px">Reading ' +
+    'the live verdicts on both venues, then asking Qwen…</div>';
+  if (!r) return '';
+  if (r.error) return '<div class="panel" style="display:flex;gap:14px;align-items:flex-start;' +
+    'border-color:var(--warning)"><span class="ring sm" style="color:var(--warning)">' + svg('alert') +
+    '</span><div style="font-size:14px;line-height:1.6">' + esc(r.error) + '</div></div>';
+  const vs = r.facts.venues;
+  const badge = (name, live) => live && live.verdict
+    ? '<span data-v="' + esc(live.verdict) + '" style="display:inline-flex;align-items:center;gap:10px">' +
+      '<span style="font-size:12px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase">' +
+      name + '</span><span class="badge">' + svg(V(live.verdict).icon) + esc(live.verdict) + '</span></span>'
+    : '<span style="font-size:13px;color:var(--muted)">' + name + ': no quote</span>';
+  // the model's last line is the action; show it apart from the reasoning
+  const text = String(r.answer || '');
+  const i = text.lastIndexOf('Action:');
+  const body = i >= 0 ? text.slice(0, i).trim() : text;
+  const act = i >= 0 ? text.slice(i) : '';
+  const facts = ['solana', 'bitget'].map(v => {
+    const f = vs[v], l = f.live || {}, m = f.measured_history;
+    const name = v === 'bitget' ? 'Bitget rTokens' : 'Solana xStocks';
+    return '<div class="panel quiet"><h4 style="font-size:12px;letter-spacing:.12em;' +
+      'text-transform:uppercase;color:var(--text-2);margin-bottom:6px">' + name + '</h4>' +
+      kvLine('Reference', usd(l.reference), 'Hyperliquid 24/7 perp') +
+      kvLine('Token price', usd(l.pool), v === 'bitget' ? 'Bitget spot' : 'Solana pool') +
+      kvLine('Deviation', bps(l.deviation_bps), 'against ' + band(l.expected_bps)) +
+      kvLine('Last trade', ago(l.stale_hours), 'at the venue') +
+      (m ? kvLine('Measured', m.weekend_hours_measured + ' weekend hours',
+        'mean |dev| ' + mag(m.mean_abs_deviation_bps) + ', 1h slope ' + conv(m.convergence_slope['1h'])) : '') +
+      '</div>';
+  }).join('');
+  return '<div class="panel">' +
+    '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin-bottom:16px">' +
+      '<span class="num" style="font-weight:600">' + esc(r.ticker) + '</span>' +
+      badge('Solana', vs.solana.live) + badge('Bitget', vs.bitget.live) + '</div>' +
+    (r.llm ? '' : '<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:14px;' +
+      'font-size:13.5px;color:var(--text-2)"><span class="ring sm" style="color:var(--warning)">' +
+      svg('shield') + '</span><div><b style="color:var(--text)">Fail-closed.</b> ' +
+      esc(r.reason || '') + '</div></div>') +
+    '<div class="ask-answer">' + esc(body) +
+      (act ? '<span class="act">' + esc(act) + '</span>' : '') + '</div>' +
+    '<div style="margin-top:16px;font-size:12.5px;color:var(--muted)">' +
+      (r.llm ? 'Written by ' + esc(r.model) + ' from the facts below. ' : '') +
+      'Verdicts by Datum, which the model cannot change.</div>' +
+  '</div>' +
+  '<div class="grid-2" style="margin-top:16px">' + facts + '</div>';
+}
+async function callAsk() {
+  const box = $('#ask-q');
+  ASK.q = (box ? box.value : ASK.q).trim();
+  if (!ASK.q || ASK.busy) return;
+  ASK.busy = true; ASK.res = null; render();
+  try {
+    const r = await fetch('/api/ask', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({question: ASK.q, ticker: S.ticker})});
+    ASK.res = await r.json();
+    if (!ASK.res || (!ASK.res.answer && !ASK.res.error)) throw new Error('empty answer');
+  } catch (e) {
+    ASK.res = {error: 'The service did not answer (' + e.message + '). Start it with ' +
+      'python scripts/serve.py, or try the hosted site.'};
+  }
+  ASK.busy = false; render();
+}
+
+/* ===========================================================================
    VIEW: CROSS-TICKER
    =========================================================================== */
 function viewTickers() {
@@ -1805,6 +1916,7 @@ const ROUTES = {
                shell: 'landing', descriptor: 'Weekend oracle'},
   measurement:{label: 'Measurement',   icon: 'chart',  fn: viewMeasurement},
   quote:      {label: 'Live quote',    icon: 'pulse',  fn: viewQuote},
+  ask:        {label: 'Ask Datum',     icon: 'bulb',   fn: viewAsk},
   tickers:    {label: 'Cross-ticker',  icon: 'grid',   fn: viewTickers},
   methodology:{label: 'Methodology',   icon: 'flask',  fn: viewMethod},
   states:     {label: 'Verdict states', icon: 'layers', fn: viewStates, group: 2}
@@ -1867,6 +1979,12 @@ function render() {
   wireControls();
   wireChart();
   const q = $('#q-live'); if (q) q.onclick = callApi;
+  const ag = $('#ask-go'); if (ag) ag.onclick = callAsk;
+  const aq = $('#ask-q');
+  if (aq) aq.onkeydown = e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) callAsk(); };
+  view.querySelectorAll('[data-ask]').forEach(b => {
+    b.onclick = () => { ASK.q = ASK_SUGGEST[+b.dataset.ask]; if (aq) aq.value = ASK.q; callAsk(); };
+  });
   view.querySelectorAll('[data-chip]').forEach(b => {
     b.onclick = () => { S.verdict = b.dataset.chip; render(); };
   });

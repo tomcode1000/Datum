@@ -6,8 +6,11 @@
     GET /api/quote/TSLA    live quote: fair value, band, deviation, verdict
     GET /api/quotes        live quote for every ticker in the panel
     GET /api/panel         the fitted panel behind the model
+    POST /api/ask          Ask Datum: {"question": ..., "ticker": ...}
+    (every GET takes ?venue=solana|bitget; Solana is the default)
 """
 import json
+import os
 import sys
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -17,6 +20,15 @@ from urllib.parse import parse_qs
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+# Local runs read secrets from .env (gitignored); the host sets them itself.
+_env = ROOT / ".env"
+if _env.exists():
+    for _line in _env.read_text(encoding="utf-8").splitlines():
+        _k, _, _v = _line.partition("=")
+        if _k.strip() and not _k.startswith("#") and _v.strip():
+            os.environ.setdefault(_k.strip(), _v.strip())
+
+from oracle.ask import ask  # noqa: E402
 from oracle.service import quote, sweep_json  # noqa: E402
 
 
@@ -47,6 +59,18 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json(json.dumps({"error": str(exc)}), status=404)
             return
         super().do_GET()
+
+    def do_POST(self):
+        if self.path.split("?")[0] != "/api/ask":
+            self._json(json.dumps({"error": "not found"}), status=404)
+            return
+        try:
+            n = min(int(self.headers.get("Content-Length") or 0), 4096)
+            body = json.loads(self.rfile.read(n) or b"{}")
+            out = ask(str(body.get("question", "")), body.get("ticker"))
+            self._json(json.dumps(out), status=400 if "error" in out else 200)
+        except Exception as exc:
+            self._json(json.dumps({"error": f"{type(exc).__name__}: {exc}"}), status=500)
 
     def _json(self, body: str, status: int = 200):
         payload = body.encode()
