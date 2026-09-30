@@ -10,4 +10,4 @@ are those taken while the US cash market was closed for the weekend.
 
 | Day (UTC) | Sweeps | Weekend sweeps | OK | LAGGED | STALE | NO_POOL | NO_REFERENCE | ERROR |
 |---|---|---|---|---|---|---|---|---|
-| 2026-09-30 | 2 | 0 | 8 | 22 | 2 | 0 | 0 | 0 |
+| 2026-09-30 | 3 | 0 | 14 | 32 | 2 | 0 | 0 | 0 |
