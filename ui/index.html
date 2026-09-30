@@ -873,14 +873,11 @@ const S = {ticker: 'TSLA', wi: 0, verdict: 'OK'};
 
 const VERDICTS = [
   {k: 'OK', icon: 'check', sub: 'Inside the band',
-   desc: 'The quote sits inside the expected deviation band for this pool’s liquidity. It can be priced from.',
-   advice: 'Quote is −26bps vs reference, within the ±27bps typical for this liquidity.'},
+   desc: 'The quote sits inside the expected deviation band for this pool’s liquidity. It can be priced from.'},
   {k: 'LAGGED', icon: 'clock', sub: 'Outside the band',
-   desc: 'Outside the band, but the pool is still trading. Expect convergence over 1 to 12h and price from the reference meanwhile.',
-   advice: 'Quote is +84bps vs reference, outside the ±27bps typical for this liquidity. Expect convergence over 1 to 12h; price from the reference instead.'},
+   desc: 'Outside the band, but the pool is still trading. Expect convergence over 1 to 12h and price from the reference meanwhile.'},
   {k: 'STALE', icon: 'hourglass', sub: 'Not a price at all',
-   desc: 'The pool has not traded for over ' + FACT.staleAfterH + ' hours. This is not a worse LAGGED. The quote is absent, not wrong.',
-   advice: 'Pool has not traded for 7.4h. Treat the on-chain quote as absent and price from the reference.'},
+   desc: 'The pool has not traded for over ' + FACT.staleAfterH + ' hours. This is not a worse LAGGED. The quote is absent, not wrong.'},
   {k: 'NO_POOL', icon: 'ban', sub: 'Nothing genuine found',
    desc: 'No genuine pool. A search for TSLAx returns four counterfeits, some priced at $0.000005; the backend rejects them rather than quoting one.',
    advice: 'No genuine xStocks pool found; reference price only.'},
@@ -1010,7 +1007,7 @@ function quoteCard(kind) {
       '<span style="flex:1;height:1px;background:var(--border-soft)"></span>' +
       '<span class="badge">' + svg(v.icon) + kind + '</span></div>' +
     '<p style="font-size:14px;line-height:1.6;color:var(--text-2);margin-bottom:18px">' +
-      esc(v.advice) + '</p>' +
+      esc(adviceFor(kind, sp)) + '</p>' +
     kvLine('Fair value', usd(sp.ref), 'Hyperliquid 24/7 perp') +
     kvLine('On-chain quote', usd(sp.pool), 'xStocks on Solana') +
     kvLine('Deviation', bps(sp.dev), sp.live ? 'live' : 'replay specimen', true) +
@@ -1356,6 +1353,21 @@ const kv = (k, v) => '<div class="kv"><span class="k">' + esc(k) +
    NO_REFERENCE are an absence of measurement, so they get a different panel
    shape rather than the same panel with a different coloured badge.
    =========================================================================== */
+/* The sentence under a verdict. A live answer is quoted as the service gave it;
+   otherwise it is built from the figures the panel is showing, so the words
+   and the numbers beside them can never disagree. */
+function adviceFor(kind, sp) {
+  if (LIVE && LIVE.ticker === S.ticker && LIVE.verdict === kind) return LIVE.advice;
+  if (sp && (kind === 'OK' || kind === 'LAGGED')) {
+    return 'Quote is ' + bps(sp.dev) + ' vs reference, ' +
+      (Math.abs(sp.dev) <= sp.e ? 'within' : 'outside') + ' the ' + band(sp.e) +
+      ' typical for this liquidity.' + (kind === 'LAGGED'
+        ? ' Expect convergence over 1 to 12h; price from the reference instead.' : '');
+  }
+  if (kind === 'STALE') return 'Pool has not traded for over ' + FACT.staleAfterH +
+    ' hours. Treat the on-chain quote as absent and price from the reference.';
+  return VERDICTS.find(x => x.k === kind).advice;
+}
 function specimen(kind) {
   // A live response beats anything drawn from the replay, so when the service
   // is up the panel shows the figures it actually returned.
@@ -1440,7 +1452,7 @@ function viewQuote() {
       '<div data-v="' + S.verdict + '">' +
       '<div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;margin-bottom:22px">' +
         '<div style="flex:1;min-width:320px"><h2>' + title + '</h2>' +
-        '<p class="lede" style="margin-top:12px;max-width:66ch">' + esc(v.advice) + '</p></div>' +
+        '<p class="lede" style="margin-top:12px;max-width:66ch">' + esc(adviceFor(S.verdict, sp)) + '</p></div>' +
         '<span class="badge">' + svg(v.icon) + v.k + '</span>' +
       '</div>' +
       '<div class="grid-3">' +
@@ -1486,8 +1498,8 @@ function absence(kind, v) {
   const t = tk();
   const rows = {
     STALE: [
-      ['Last trade', hrs(LIVE && LIVE.stale_hours != null ? LIVE.stale_hours : 7.4) +
-        ' ago', 'the pool has not printed since'],
+      ['Last trade', (LIVE && LIVE.ticker === S.ticker && LIVE.stale_hours != null
+        ? ago(LIVE.stale_hours) : 'over ' + FACT.staleAfterH + 'h ago'), 'the pool has not printed since'],
       ['Freshness window', '≤ ' + fix(FACT.staleAfterH, 1) + 'h', 'below this it is a price'],
       ['Median weekend volume', vol(t.median_weekend_volume), 'why it goes quiet']
     ],
@@ -1517,7 +1529,7 @@ function absence(kind, v) {
     '<div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;margin-bottom:22px">' +
       '<div style="flex:1;min-width:320px">' +
       '<h2>No measurement. <span class="tint">' + esc(v.sub) + '.</span></h2>' +
-      '<p class="lede" style="margin-top:12px;max-width:66ch">' + esc(v.advice) + '</p></div>' +
+      '<p class="lede" style="margin-top:12px;max-width:66ch">' + esc(adviceFor(kind)) + '</p></div>' +
       '<span class="badge">' + svg(v.icon) + kind + '</span></div>' +
     '<div class="panel" style="padding:0">' +
       rows.map((r, i) =>
