@@ -47,10 +47,28 @@ Rules:
   OK: the token price can be used. LAGGED: outside its expected band, price from the
   reference until it converges. STALE: no trade for over {STALE_AFTER_HOURS:.0f} hours, the
   token price is absent. NO_POOL / NO_REFERENCE: nothing to measure.
-- Datum is a pricing check, not a trading signal. Never recommend a trade.
+- Valuing collateral, liquidating a position and marking a book are exactly what
+  Datum is for: answer them directly with which price is safe to use. Only advice
+  to buy or sell for profit is out of scope; Datum is a pricing check, not a
+  trading signal.
+- Questions about now use each venue's live quote. Questions about weekends,
+  history or which venue is usually closer use the measured weekend history, and
+  the "comparison" block states the result: report it, do not recompute it. Say
+  whether you are using the live quotes or the measured weekend history.
+- Live quotes carry "session": the US cash market is open, overnight or in the
+  weekend gap. Mention it when it matters.
+- Name only the verdicts Datum returned in FACTS. Never name another verdict,
+  not even to say it does not apply ("not STALE" is not allowed; say "traded
+  within the hour" instead).
+- Never mention FACTS, the comparison block or any field name; just state the
+  finding.
+- Write figures as a person would ("2.6 bps below the reference", "$350.66",
+  "traded within the hour"), never as field names.
 - If FACTS cannot answer the question, say what is missing.
 - Plain English, at most 110 words, no headings, no bullet points.
-- End with one line that starts "Action:" and says which price to use."""
+- End with one line that starts "Action:" and says which price to use right
+  now, following the live verdicts: a venue marked OK can be priced from; for
+  LAGGED or STALE, use the reference."""
 
 
 def find_ticker(question: str, default: str | None, known: set[str]) -> str | None:
@@ -106,6 +124,27 @@ def facts(ticker: str) -> dict:
                 "median_weekend_volume_usd_per_hour": round(row["median_weekend_volume"]),
             }
         out["venues"][venue] = {"live": live, "measured_history": measured}
+    out["comparison"] = _compare(out["venues"])
+    return out
+
+
+def _compare(venues: dict) -> dict:
+    """Venue comparisons computed here, so the model reports them rather than
+    reading negative slopes itself (it got one backwards in testing)."""
+    h = {v: d["measured_history"] for v, d in venues.items() if d["measured_history"]}
+    out = {}
+    if len(h) == 2:
+        s, b = h["solana"], h["bitget"]
+        out["closer_to_reference_on_average_at_weekends"] = (
+            "solana" if s["mean_abs_deviation_bps"] < b["mean_abs_deviation_bps"] else "bitget")
+        for k in ("1h", "12h"):
+            cs, cb = s["convergence_slope"].get(k), b["convergence_slope"].get(k)
+            if cs is not None and cb is not None:
+                out[f"corrects_faster_{k}"] = "solana" if cs < cb else "bitget"
+    live = {v: d["live"] for v, d in venues.items() if d["live"].get("deviation_bps") is not None}
+    if len(live) == 2:
+        out["closer_to_reference_right_now"] = min(
+            live, key=lambda v: abs(live[v]["deviation_bps"]))
     return out
 
 
@@ -121,10 +160,15 @@ def _fallback(f: dict, reason: str) -> str:
 
 
 def _qwen(question: str, f: dict, key: str) -> str:
-    body = {"model": QWEN_MODEL, "temperature": 0.2, "max_tokens": 400,
+    body = {"model": QWEN_MODEL, "temperature": 0.2, "max_tokens": 900,
             "messages": [{"role": "system", "content": SYSTEM},
                          {"role": "user", "content":
                           "FACTS:\n" + json.dumps(f, indent=1) + "\n\nQUESTION: " + question}]}
+    if "openrouter.ai" in QWEN_BASE:
+        # Qwen 3.8 reasons before it answers, and on Datum's facts that spent the
+        # whole token budget with no answer left. The verdict is already decided;
+        # the model only has to explain it, so reasoning is switched off.
+        body["reasoning"] = {"enabled": False}
     req = urllib.request.Request(
         QWEN_BASE.rstrip("/") + "/chat/completions", data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}",
@@ -132,13 +176,25 @@ def _qwen(question: str, f: dict, key: str) -> str:
                  "HTTP-Referer": "https://datum-sandy.vercel.app", "X-Title": "Datum"})
     with urllib.request.urlopen(req, timeout=25) as r:
         data = json.load(r)
-    return data["choices"][0]["message"]["content"].strip()
+    content = (data.get("choices") or [{}])[0].get("message", {}).get("content")
+    if not content or not content.strip():
+        raise ValueError("the model returned no answer")
+    return content.strip()
 
 
 def _grounded(answer: str, f: dict) -> str | None:
     """Why an answer must be rejected, or None when it can stand."""
     returned = {v["live"].get("verdict") for v in f["venues"].values()} - {None}
-    named = {v for v in VERDICTS_ORDER if re.search(rf"\b{v}\b", answer)}
+    # Case-insensitive and tolerant of spacing ("lagged", "No Pool"); OK stays
+    # exact, since "ok" is an ordinary word.
+    named = set()
+    for v in VERDICTS_ORDER:
+        if v == "OK":
+            hit = re.search(r"\bOK\b", answer)
+        else:
+            hit = re.search(r"\b" + v.replace("_", r"[\s_-]?") + r"\b", answer, re.IGNORECASE)
+        if hit:
+            named.add(v)
     if named - returned:
         return "named a verdict Datum did not return: " + ", ".join(sorted(named - returned))
     if "Action:" not in answer:
