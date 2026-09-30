@@ -65,9 +65,10 @@ class Handler(SimpleHTTPRequestHandler):
             self._json(json.dumps({"error": "not found"}), status=404)
             return
         try:
-            n = min(int(self.headers.get("Content-Length") or 0), 4096)
+            n = min(int(self.headers.get("Content-Length") or 0), 16384)
             body = json.loads(self.rfile.read(n) or b"{}")
-            out = ask(str(body.get("question", "")), body.get("ticker"))
+            out = ask(str(body.get("question", "")), body.get("ticker"),
+                      body.get("positions"), body.get("history"))
             self._json(json.dumps(out), status=400 if "error" in out else 200)
         except Exception as exc:
             self._json(json.dumps({"error": f"{type(exc).__name__}: {exc}"}), status=500)

@@ -14,8 +14,8 @@ import os
 import re
 import urllib.request
 
-from .service import (PANEL, STALE_AFTER_HOURS, VERDICTS_ORDER, panel_path,
-                      quote)
+from .service import (PANEL, STALE_AFTER_HOURS, VENUES, VERDICTS_ORDER,
+                      panel_path, quote, sweep_json)
 from .sources import hl_context
 
 # Any OpenAI-compatible endpoint works. The default is the hackathon's Qwen
@@ -26,6 +26,8 @@ QWEN_BASE = (os.environ.get("LLM_BASE_URL") or os.environ.get("QWEN_BASE_URL")
 QWEN_MODEL = (os.environ.get("LLM_MODEL") or os.environ.get("QWEN_MODEL")
               or "qwen3.8-max")
 MAX_QUESTION = 400
+MAX_POSITIONS = 10
+MAX_TURNS = 3
 
 # Company names a question is likely to use, for the tickers on the page.
 NAMES = {
@@ -66,6 +68,13 @@ Rules:
   "traded within the hour"), never as field names.
 - If FACTS cannot answer the question, say what is missing.
 - Plain English, at most 110 words, no headings, no bullet points.
+- If FACTS include "your_positions", these are the user's own holdings: answer
+  for them. For each, say the price to mark it at, its value there, and how far
+  it is from its liquidation price. If "token_price_alone_would_liquidate" is
+  true for any, say so first: the drifted token price would trigger a
+  liquidation the trusted price would not.
+- Earlier questions and answers may come first. Answer the latest question from
+  the latest FACTS; earlier figures may be out of date.
 - End with one line that starts "Action:" and says which price to use right
   now, following the live verdicts: a venue marked OK can be priced from; for
   LAGGED or STALE, use the reference."""
@@ -148,6 +157,46 @@ def _compare(venues: dict) -> dict:
     return out
 
 
+def _positions(raw, known: set[str]) -> list[dict]:
+    """The user's holdings, validated, each marked at the price Datum trusts."""
+    clean = []
+    for p in (raw or [])[:MAX_POSITIONS]:
+        try:
+            t = str(p.get("ticker", "")).upper().strip()
+            venue = str(p.get("venue", "bitget")).lower()
+            qty = float(p.get("quantity"))
+            liq = p.get("liquidation_price")
+            liq = float(liq) if liq not in (None, "") else None
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if t in known and venue in VENUES and 0 < qty <= 1e9 and (liq is None or liq > 0):
+            clean.append({"ticker": t, "venue": venue, "quantity": qty,
+                          "liquidation_price": liq})
+    if not clean:
+        return []
+    sweeps = {v: {q["ticker"]: q for q in json.loads(sweep_json(v))["quotes"] if "ticker" in q}
+              for v in {p["venue"] for p in clean}}
+    out = []
+    for p in clean:
+        q = sweeps[p["venue"]].get(p["ticker"], {})
+        verdict, token, ref = q.get("verdict"), q.get("pool"), q.get("reference")
+        # OK: the token price stands. Otherwise the reference is the price to use.
+        trusted = token if verdict == "OK" else ref
+        row = {**p, "verdict": verdict, "token_price": token, "reference_price": ref,
+               "mark_at": "token price" if verdict == "OK" else "reference",
+               "trusted_price": trusted}
+        if trusted:
+            row["value_at_trusted_price"] = round(p["quantity"] * trusted, 2)
+        if token:
+            row["value_at_token_price"] = round(p["quantity"] * token, 2)
+        liq = p["liquidation_price"]
+        if liq and trusted:
+            row["distance_to_liquidation_pct"] = round((trusted - liq) / trusted * 100, 2)
+            row["token_price_alone_would_liquidate"] = bool(token and token <= liq < trusted)
+        out.append(row)
+    return out
+
+
 def _fallback(f: dict, reason: str) -> str:
     parts = []
     for venue, name in (("solana", "Solana xStocks"), ("bitget", "Bitget rTokens")):
@@ -156,14 +205,27 @@ def _fallback(f: dict, reason: str) -> str:
             parts.append(f"{name}: {live['verdict']}. {live['advice']}")
         else:
             parts.append(f"{name}: no quote ({live.get('error', 'unavailable')}).")
+    for p in f.get("your_positions", []):
+        if p.get("trusted_price"):
+            line = (f"Your {p['quantity']:g} {p['ticker']} on {p['venue']}: mark at the "
+                    f"{p['mark_at']}, {p['trusted_price']:.2f}")
+            if p.get("distance_to_liquidation_pct") is not None:
+                line += f", {p['distance_to_liquidation_pct']:.1f}% above its liquidation price"
+            if p.get("token_price_alone_would_liquidate"):
+                line += ". The token price alone would liquidate it; the trusted price does not"
+            parts.append(line + ".")
     return " ".join(parts)
 
 
-def _qwen(question: str, f: dict, key: str) -> str:
-    body = {"model": QWEN_MODEL, "temperature": 0.2, "max_tokens": 900,
-            "messages": [{"role": "system", "content": SYSTEM},
-                         {"role": "user", "content":
-                          "FACTS:\n" + json.dumps(f, indent=1) + "\n\nQUESTION: " + question}]}
+def _qwen(question: str, f: dict, key: str, history: list[dict] | None = None) -> str:
+    messages = [{"role": "system", "content": SYSTEM}]
+    for turn in (history or [])[-MAX_TURNS:]:
+        q, a = str(turn.get("q", ""))[:MAX_QUESTION], str(turn.get("a", ""))[:1500]
+        if q and a:
+            messages += [{"role": "user", "content": q}, {"role": "assistant", "content": a}]
+    messages.append({"role": "user", "content":
+                     "FACTS:\n" + json.dumps(f, indent=1) + "\n\nQUESTION: " + question})
+    body = {"model": QWEN_MODEL, "temperature": 0.2, "max_tokens": 900, "messages": messages}
     if "openrouter.ai" in QWEN_BASE:
         # Qwen 3.8 reasons before it answers, and on Datum's facts that spent the
         # whole token budget with no answer left. The verdict is already decided;
@@ -184,7 +246,8 @@ def _qwen(question: str, f: dict, key: str) -> str:
 
 def _grounded(answer: str, f: dict) -> str | None:
     """Why an answer must be rejected, or None when it can stand."""
-    returned = {v["live"].get("verdict") for v in f["venues"].values()} - {None}
+    returned = ({v["live"].get("verdict") for v in f["venues"].values()}
+                | {p.get("verdict") for p in f.get("your_positions", [])}) - {None}
     # Case-insensitive and tolerant of spacing ("lagged", "No Pool"); OK stays
     # exact, since "ok" is an ordinary word.
     named = set()
@@ -202,22 +265,30 @@ def _grounded(answer: str, f: dict) -> str | None:
     return None
 
 
-def ask(question: str, ticker: str | None = None) -> dict:
+def ask(question: str, ticker: str | None = None, positions: list | None = None,
+        history: list | None = None) -> dict:
     question = (question or "").strip()[:MAX_QUESTION]
     known = {r["ticker"] for r in json.loads(PANEL.read_text())["tickers"]}
-    t = find_ticker(question, ticker, known)
     if not question:
         return {"error": "Ask a question, e.g. can I liquidate TSLA on Bitget right now?"}
+    try:
+        mine = _positions(positions, known)
+    except Exception:
+        mine = []            # positions are context; a failure must not block the answer
+    # a question that names no ticker is about the last one discussed, or your positions
+    t = find_ticker(question, ticker or (mine[0]["ticker"] if mine else None), known)
     if not t:
         return {"error": "Name one of the tickers Datum measures: " + ", ".join(sorted(known))}
     f = facts(t)
+    if mine:
+        f["your_positions"] = mine
     key = (os.environ.get("LLM_API_KEY") or os.environ.get("QWEN_API_KEY") or "").strip()
     reply = {"ticker": t, "question": question, "model": QWEN_MODEL, "facts": f}
     if not key:
         return {**reply, "answer": _fallback(f, "no key"), "llm": False,
                 "reason": "Qwen is not configured on this server, so this is Datum's own advice."}
     try:
-        answer = _qwen(question, f, key)
+        answer = _qwen(question, f, key, history if isinstance(history, list) else None)
     except Exception as exc:
         return {**reply, "answer": _fallback(f, "call failed"), "llm": False,
                 "reason": f"Qwen did not answer ({type(exc).__name__}), so this is "
