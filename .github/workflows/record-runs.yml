@@ -1,0 +1,34 @@
+name: Record live verdicts
+
+# Hourly, so the run log covers weekends as well as market hours.
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: record-runs
+  cancel-in-progress: false
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Quote every ticker
+        run: python scripts/record_run.py
+      - name: Commit the run
+        run: |
+          git config user.name "datum-recorder"
+          git config user.email "datum-recorder@users.noreply.github.com"
+          git add runs
+          git diff --cached --quiet && exit 0
+          git commit -m "Run log: $(date -u +'%Y-%m-%d %H:%M') UTC"
+          git pull --rebase
+          git push

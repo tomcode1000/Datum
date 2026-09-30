@@ -40,6 +40,7 @@ LAGGED = "LAGGED"          # quote is outside the band; expect convergence
 STALE = "STALE"            # pool has not traded recently; quote is not a price
 NO_REFERENCE = "NO_REFERENCE"
 NO_POOL = "NO_POOL"
+VERDICTS_ORDER = (OK, LAGGED, STALE, NO_POOL, NO_REFERENCE)
 
 
 @dataclass
