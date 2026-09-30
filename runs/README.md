@@ -1,13 +1,14 @@
 # Run log
 
-Every hour a scheduled GitHub Action quotes every ticker in the panel
+Every hour a scheduled GitHub Action quotes every ticker on both venues
 through the same code the live site runs (`scripts/record_run.py`) and
-commits the full response here, one JSON line per sweep, in
+commits the full response here, one JSON line per venue per sweep, in
 `runs/YYYY-MM-DD.jsonl` (UTC). The commit history is the timestamp.
 
-Counts are ticker-quotes per verdict for each UTC day. *Weekend sweeps*
-are those taken while the US cash market was closed for the weekend.
+Counts are ticker-quotes per verdict for each UTC day and venue. *Weekend
+sweeps* were taken while the US cash market was closed for the weekend.
 
-| Day (UTC) | Sweeps | Weekend sweeps | OK | LAGGED | STALE | NO_POOL | NO_REFERENCE | ERROR |
-|---|---|---|---|---|---|---|---|---|
-| 2026-09-30 | 4 | 0 | 23 | 39 | 2 | 0 | 0 | 0 |
+| Day (UTC) | Venue | Sweeps | Weekend sweeps | OK | LAGGED | STALE | NO_POOL | NO_REFERENCE | ERROR |
+|---|---|---|---|---|---|---|---|---|---|
+| 2026-09-30 | bitget | 1 | 0 | 16 | 0 | 0 | 0 | 0 | 0 |
+| 2026-09-30 | solana | 5 | 0 | 31 | 47 | 2 | 0 | 0 | 0 |
