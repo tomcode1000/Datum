@@ -6,6 +6,9 @@ Hyperliquid  - 24/7 equity perps (HIP-3 builder dex "xyz", assets namespaced
                open (slope ~1.05, r~0.86 over 21 weekends), so the perp is a
                valid reference rather than something to arbitrage against.
 Jupiter      - resolves an xStocks symbol to its Solana mint.
+Bitget       - rTokens, Bitget's own tokenized US stocks, as spot pairs named
+               R<ticker>USDT (RTSLAUSDT). Public market data, no key. The second
+               venue measured against the same reference.
 GeckoTerminal- hourly OHLCV for the xStocks pool. ~5.5 months of history is
                reachable by paging backwards, which is far more than the 30
                days a Bitquery free tier would give.
@@ -21,6 +24,7 @@ HL_INFO = "https://api.hyperliquid.xyz/info"
 HL_DEX = "xyz"
 JUP = "https://lite-api.jup.ag/tokens/v2/search"
 GT = "https://api.geckoterminal.com/api/v2/networks/solana"
+BG = "https://api.bitget.com/api/v2/spot/market"
 
 # xStocks mints use an "Xs" vanity prefix. This is a safety filter, not a
 # nicety: a search for TSLAx returns four counterfeit mints alongside the
@@ -143,3 +147,46 @@ def pool_last_trade_ms(pool: str) -> int | None:
 def _iso_ms(stamp: str) -> int:
     from datetime import datetime
     return int(datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp() * 1000)
+
+
+# ---- Bitget rTokens -------------------------------------------------------
+
+def rtoken_symbol(ticker: str) -> str:
+    return f"R{ticker}USDT"
+
+
+def rtoken_candles(ticker: str, start_ms: int, end_ms: int
+                   ) -> dict[int, tuple[float, float]]:
+    """Hourly (close, USDT volume) for an rToken, paging backwards.
+
+    Bitget omits hours with no trades, exactly as GeckoTerminal does for the
+    Solana pools, so both venues enter the dataset on the same terms."""
+    out: dict[int, tuple[float, float]] = {}
+    cur = end_ms
+    while cur > start_ms:
+        url = (f"{BG}/history-candles?symbol={rtoken_symbol(ticker)}"
+               f"&granularity=1h&endTime={cur}&limit=200")
+        rows = get(url, max_age=_HISTORY_TTL)["data"] or []
+        if not rows:
+            break
+        for ts, _o, _h, _l, close, _base, usdt, *_ in rows:
+            out[int(ts)] = (float(close), float(usdt))
+        oldest = min(int(r[0]) for r in rows)
+        if oldest >= cur:
+            break
+        cur = oldest - 1
+    return {ts: v for ts, v in out.items() if start_ms <= ts <= end_ms}
+
+
+def rtoken_tickers_live() -> dict[str, dict]:
+    """Last price for every Bitget spot pair, in one call, keyed by symbol."""
+    rows = get(f"{BG}/tickers", cache=False, tries=3, pause=3.0)["data"]
+    return {r["symbol"]: r for r in rows}
+
+
+def rtoken_last_trade_ms(ticker: str) -> int | None:
+    """Open time of the most recent hour with trades, within the last day."""
+    rows = get(f"{BG}/candles?symbol={rtoken_symbol(ticker)}&granularity=1h&limit=24",
+               cache=False, tries=3, pause=3.0)["data"] or []
+    traded = [int(r[0]) for r in rows if float(r[6]) > 0]
+    return max(traded) if traded else None

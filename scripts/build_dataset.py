@@ -1,6 +1,7 @@
 """Build the full weekend panel and fit both models.
 
-    python scripts/build_dataset.py
+    python scripts/build_dataset.py              # Solana xStocks -> panel.json
+    python scripts/build_dataset.py bitget       # Bitget rTokens -> panel-bitget.json
 
 Writes panel.json (per-ticker summary + fitted model) and prints the table that
 backs the submission's headline numbers. Responses are cached under cache/, so
@@ -15,13 +16,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from oracle.dataset import HORIZONS, build_pair               # noqa: E402
 from oracle.model import LiquidityModel, convergence, pearson  # noqa: E402
-from oracle.sources import hl_universe                        # noqa: E402
+from oracle.sources import (hl_universe, rtoken_symbol,        # noqa: E402
+                            rtoken_tickers_live)
 
-OUT = Path(__file__).resolve().parent.parent / "panel.json"
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def panel_path(venue: str) -> Path:
+    return ROOT / ("panel.json" if venue == "solana" else f"panel-{venue}.json")
 
 
 def main() -> None:
+    venue = sys.argv[1] if len(sys.argv) > 1 else "solana"
+    out_path = panel_path(venue)
     tickers = hl_universe()
+    if venue == "bitget":
+        # only tickers Bitget lists as an rToken
+        listed = set(rtoken_tickers_live())
+        tickers = [t for t in tickers if rtoken_symbol(t) in listed]
     print(f"builder-dex tickers: {len(tickers)}", flush=True)
     print(f"{'ticker':9}{'n':>6}"
           + "".join(f"{str(h) + 'h':>9}" for h in HORIZONS)
@@ -30,7 +42,7 @@ def main() -> None:
     pairs, rows = [], []
     for t in tickers:
         try:
-            pair = build_pair(t)
+            pair = build_pair(t, venue=venue)
         except Exception as exc:          # a dead pool must not stop the run
             print(f"{t:9}  skipped ({type(exc).__name__})", flush=True)
             continue
@@ -65,7 +77,7 @@ def main() -> None:
     fitted = [p for p in pairs if p.median_volume > 0 and p.reliable]
     logv = [math.log(p.median_volume) for p in fitted]
     devs = [p.mean_abs_deviation for p in fitted]
-    liqs = [math.log(p.liquidity) for p in fitted]
+    liqs = [math.log(p.liquidity) for p in fitted if p.liquidity > 0]
     thin = sorted(p.ticker for p in pairs if not p.reliable)
 
     print(f"\nCONVERGENCE  (all {len(pairs)} tickers)")
@@ -75,19 +87,20 @@ def main() -> None:
     print(f"\nCROSS-SECTION  ({len(fitted)} tickers; excluded for thin "
           f"weekend samples: {', '.join(thin) or 'none'})")
     print(f"  corr(log weekend volume, |dev|)  = {pearson(logv, devs):+.3f}")
-    print(f"  corr(log pool liquidity, |dev|)  = {pearson(liqs, devs):+.3f}")
-    print("  (neither measure is sharper; do not claim volume beats TVL)")
+    if len(liqs) == len(devs):
+        print(f"  corr(log pool liquidity, |dev|)  = {pearson(liqs, devs):+.3f}")
+        print("  (neither measure is sharper; do not claim volume beats TVL)")
     print(f"\nmodel: |dev| bps = {model.a * 1e4:.1f} {model.b * 1e4:+.1f}"
           f" * ln(weekend hourly volume)   R2 = {model.r2:.2f}")
     for v in (100, 1_000, 10_000):
         print(f"   ${v:>7,}/hr -> {model.deviation_bps(v):>5.0f} bps")
 
-    OUT.write_text(json.dumps(dict(
+    out_path.write_text(json.dumps(dict(
         tickers=rows,
         model=dict(a=model.a, b=model.b, r2=model.r2,
                    volume_lo=model.lo, volume_hi=model.hi),
     ), indent=2))
-    print(f"\nwrote {OUT.name} ({len(rows)} tickers)")
+    print(f"\nwrote {out_path.name} ({len(rows)} tickers)")
 
 
 if __name__ == "__main__":

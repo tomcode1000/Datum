@@ -8,6 +8,7 @@ import hashlib
 import http.client
 import json
 import os
+import socket
 import time
 import urllib.error
 import urllib.request
@@ -16,6 +17,43 @@ from pathlib import Path
 # A hosted function's filesystem is read-only apart from /tmp, and that is
 # wiped between cold starts, so there the cache only saves repeat calls within
 # one warm instance.
+# Some networks' resolvers refuse exchange domains outright (api.bitget.com
+# does not resolve on the network this was built on). When the system resolver
+# fails, ask Cloudflare's DNS-over-HTTPS by IP instead. Where DNS works, as on
+# the host, this never runs.
+_system_getaddrinfo = socket.getaddrinfo
+_doh_cache: dict[str, str] = {}
+
+
+def _doh_a_record(host: str) -> str | None:
+    if host in _doh_cache:
+        return _doh_cache[host]
+    req = urllib.request.Request(
+        f"https://1.1.1.1/dns-query?name={host}&type=A",
+        headers={"Accept": "application/dns-json"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        answers = json.load(r).get("Answer") or []
+    ips = [a["data"] for a in answers if a.get("type") == 1]
+    _doh_cache[host] = ips[0] if ips else None
+    return _doh_cache[host]
+
+
+def _getaddrinfo(host, *args, **kwargs):
+    # a host that needed DoH once goes straight there: waiting out the system
+    # resolver's timeout on every request made a dataset build crawl
+    if _doh_cache.get(host):
+        return _system_getaddrinfo(_doh_cache[host], *args, **kwargs)
+    try:
+        return _system_getaddrinfo(host, *args, **kwargs)
+    except socket.gaierror:
+        ip = _doh_a_record(host) if isinstance(host, str) else None
+        if not ip:
+            raise
+        return _system_getaddrinfo(ip, *args, **kwargs)
+
+
+socket.getaddrinfo = _getaddrinfo
+
 CACHE = (Path("/tmp/datum-cache") if os.environ.get("VERCEL")
          else Path(__file__).resolve().parent.parent / "cache")
 HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}

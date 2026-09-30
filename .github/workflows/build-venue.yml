@@ -1,0 +1,37 @@
+name: Build a venue's measured panel
+
+# Rebuilds panel-<venue>.json and ui/replay-<venue>.json from the public APIs
+# and commits them, so the measurement is reproducible by anyone who runs it.
+on:
+  workflow_dispatch:
+    inputs:
+      venue:
+        description: "solana or bitget"
+        required: true
+        default: bitget
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Measure the venue
+        run: python scripts/build_dataset.py ${{ inputs.venue }}
+      - name: Export the replays
+        run: python scripts/export_replay.py ${{ inputs.venue }}
+      - name: Commit
+        run: |
+          git config user.name "datum-recorder"
+          git config user.email "datum-recorder@users.noreply.github.com"
+          git add panel*.json ui/replay*.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Measured panel: ${{ inputs.venue }}"
+          git pull --rebase
+          git push

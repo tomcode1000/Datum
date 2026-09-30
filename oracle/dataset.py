@@ -1,4 +1,5 @@
-"""Align the Hyperliquid reference against xStocks pool prices.
+"""Align the Hyperliquid reference against tokenized-stock prices on a venue:
+Solana xStocks pools, or Bitget rTokens.
 
 One observation = one hour inside a weekend gap, for one ticker, carrying the
 deviation of the pool price from the reference plus the pool's forward returns.
@@ -7,7 +8,10 @@ Those forward returns are what let us measure convergence.
 from dataclasses import dataclass
 
 from .calendar import in_weekend_gap
-from .sources import (hl_candles, xstock_candles, xstock_mint, xstock_pool)
+from .sources import (hl_candles, rtoken_candles, xstock_candles, xstock_mint,
+                      xstock_pool)
+
+VENUES = ("solana", "bitget")
 
 HORIZONS = (1, 6, 12)
 HOUR_MS = 3_600_000
@@ -65,20 +69,31 @@ class Pair:
         return sum(abs(o.deviation) for o in self.obs) / len(self.obs)
 
 
-def build_pair(ticker: str, pages: int = 4) -> Pair | None:
-    """Assemble weekend-gap observations for one ticker, or None if unusable."""
+def _solana_bars(ticker: str, pages: int):
     found = xstock_mint(ticker)
     if not found:
-        return None
+        return None, 0.0
     mint, liquidity = found
     if liquidity < MIN_LIQUIDITY:
-        return None
+        return None, liquidity
     pool = xstock_pool(mint)
-    if not pool:
-        return None
+    return (xstock_candles(pool, pages=pages) if pool else None), liquidity
 
-    pool_bars = xstock_candles(pool, pages=pages)
-    if len(pool_bars) < MIN_BARS:
+
+def _bitget_bars(ticker: str, pages: int):
+    # The same window the Solana pools reach (pages of ~41 days), so the two
+    # venues are measured over the same weekends. An order book has no pool
+    # TVL, so liquidity is reported as 0 and left out of any liquidity fit.
+    import time
+    end = int(time.time() * 1000)
+    return rtoken_candles(ticker, end - pages * 1000 * HOUR_MS, end), 0.0
+
+
+def build_pair(ticker: str, pages: int = 4, venue: str = "solana") -> Pair | None:
+    """Assemble weekend-gap observations for one ticker, or None if unusable."""
+    bars_for = _bitget_bars if venue == "bitget" else _solana_bars
+    pool_bars, liquidity = bars_for(ticker, pages)
+    if not pool_bars or len(pool_bars) < MIN_BARS:
         return None
 
     lo, hi = min(pool_bars), max(pool_bars) + HOUR_MS

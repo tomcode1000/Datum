@@ -16,19 +16,21 @@ from oracle.dataset import HOUR_MS, build_pair                   # noqa: E402
 from oracle.model import LiquidityModel, convergence             # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "ui" / "replay.json"
 MIN_POINTS = 12   # a weekend with fewer bars than this is not worth plotting
 
 
 def main() -> None:
-    panel = json.loads((ROOT / "panel.json").read_text())
+    venue = sys.argv[1] if len(sys.argv) > 1 else "solana"
+    suffix = "" if venue == "solana" else f"-{venue}"
+    OUT = ROOT / "ui" / f"replay{suffix}.json"
+    panel = json.loads((ROOT / f"panel{suffix}.json").read_text())
     m = panel["model"]
     model = LiquidityModel(m["a"], m["b"], m["r2"], m["volume_lo"], m["volume_hi"])
     tickers = [r["ticker"] for r in panel["tickers"] if r["n"] >= 200]
 
-    out = {"model": m, "tickers": {}}
+    out = {"venue": venue, "model": m, "tickers": {}}
     for ticker in tickers:
-        pair = build_pair(ticker)
+        pair = build_pair(ticker, venue=venue)
         if not pair:
             continue
         by_ts = {o.ts: o for o in pair.obs}
@@ -66,7 +68,7 @@ def main() -> None:
 
     OUT.write_text(json.dumps(out, separators=(",", ":")))
     size = OUT.stat().st_size / 1024
-    print(f"\nwrote ui/replay.json  {size:.0f} KB  "
+    print(f"\nwrote ui/{OUT.name}  {size:.0f} KB  "
           f"{len(out['tickers'])} tickers")
 
 

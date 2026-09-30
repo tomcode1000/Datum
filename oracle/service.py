@@ -22,10 +22,18 @@ from .calendar import in_weekend_gap
 from .dataset import HOUR_MS
 from .model import LiquidityModel
 from .sources import (ACTIVITY_WINDOWS, hl_context, pool_last_trade_ms,
+                      rtoken_last_trade_ms, rtoken_symbol, rtoken_tickers_live,
                       xstock_mint, xstock_pool, xstock_pools_live)
 
 ROOT = Path(__file__).resolve().parent.parent
 PANEL = ROOT / "panel.json"
+# Two venues, one reference: Solana xStocks pools and Bitget rTokens. Each has
+# its own measured panel and fitted band, so neither borrows the other's fit.
+VENUES = ("solana", "bitget")
+
+
+def panel_path(venue: str = "solana") -> Path:
+    return ROOT / ("panel.json" if venue == "solana" else f"panel-{venue}.json")
 # Ticker -> genuine mint and deepest pool, from scripts/resolve_pools.py. They
 # do not move, and resolving them live costs two rate-limited calls per ticker.
 POOLS = ROOT / "pools.json"
@@ -56,22 +64,24 @@ class Quote:
     band_high: float | None
     stale_hours: float | None
     advice: str
+    venue: str = "solana"
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
 
 
-def _model() -> LiquidityModel:
-    if not PANEL.exists():
+def _model(venue: str = "solana") -> LiquidityModel:
+    path = panel_path(venue)
+    if not path.exists():
         raise FileNotFoundError(
-            "panel.json missing - run scripts/build_dataset.py first")
-    m = json.loads(PANEL.read_text())["model"]
+            f"{path.name} missing - run scripts/build_dataset.py {venue}")
+    m = json.loads(path.read_text())["model"]
     return LiquidityModel(m["a"], m["b"], m["r2"], m["volume_lo"], m["volume_hi"])
 
 
-def _median_volume(ticker: str) -> float | None:
+def _median_volume(ticker: str, venue: str = "solana") -> float | None:
     """The measured median weekend volume the model was fitted on."""
-    for row in json.loads(PANEL.read_text())["tickers"]:
+    for row in json.loads(panel_path(venue).read_text())["tickers"]:
         if row["ticker"] == ticker:
             return row.get("median_weekend_volume")
     return None
@@ -115,9 +125,26 @@ def _stale_hours(pool: str, attrs: dict) -> float:
     return (time.time() * 1000 - last) / HOUR_MS
 
 
-def _pool_state(ticker: str, live: dict[str, dict] | None = None
+def _rtoken_state(ticker: str, live: dict[str, dict] | None = None
+                  ) -> tuple[float | None, float | None, float | None]:
+    """(last rToken price, median weekend volume, hours since a real trade)."""
+    row = (live if live is not None else rtoken_tickers_live()).get(rtoken_symbol(ticker))
+    if not row or not row.get("lastPr"):
+        return None, None, None
+    last = rtoken_last_trade_ms(ticker)
+    # Candles are keyed by the hour they open, so the trade was at some point
+    # in that hour: counting from its end keeps this a lower bound.
+    stale = (24.0 if last is None
+             else max(0.0, (time.time() * 1000 - last - HOUR_MS) / HOUR_MS))
+    return float(row["lastPr"]), _median_volume(ticker, "bitget"), stale
+
+
+def _pool_state(ticker: str, live: dict[str, dict] | None = None,
+                venue: str = "solana"
                 ) -> tuple[float | None, float | None, float | None]:
     """(current pool price, median weekend volume, hours since a real trade)."""
+    if venue == "bitget":
+        return _rtoken_state(ticker, live)
     pool = _pool_address(ticker)
     if not pool:
         return None, None, None
@@ -129,29 +156,36 @@ def _pool_state(ticker: str, live: dict[str, dict] | None = None
 
 
 def quote(ticker: str, contexts: dict[str, dict] | None = None,
-          live: dict[str, dict] | None = None) -> Quote:
+          live: dict[str, dict] | None = None, venue: str = "solana") -> Quote:
+    if venue not in VENUES:
+        raise ValueError(f"unknown venue {venue!r}; use one of {', '.join(VENUES)}")
     contexts = contexts if contexts is not None else hl_context()
     ticker = ticker.upper()
     # Accept the token symbol ("TSLAx") as well as the ticker, but only strip
     # the x when the full name is not itself a market: SPCX is a ticker.
     if ticker not in contexts and ticker.endswith("X") and ticker[:-1] in contexts:
         ticker = ticker[:-1]
+    # ...and the rToken symbol ("RTSLAUSDT") for the Bitget venue.
+    if ticker.startswith("R") and ticker.endswith("USDT") and ticker[1:-4] in contexts:
+        ticker = ticker[1:-4]
     gap = in_weekend_gap(int(time.time() * 1000))
 
     ctx = contexts.get(ticker)
     if not ctx:
         return Quote(ticker, NO_REFERENCE, gap, None, None, None, None, None,
                      None, None,
-                     "No 24/7 reference market for this ticker.")
+                     "No 24/7 reference market for this ticker.", venue)
     reference = float(ctx["markPx"])
 
-    price, median_vol, stale_hours = _pool_state(ticker, live)
+    price, median_vol, stale_hours = _pool_state(ticker, live, venue)
     if price is None:
         return Quote(ticker, NO_POOL, gap, reference, None, None, None, None,
                      None, None,
-                     "No genuine xStocks pool found; reference price only.")
+                     ("No Bitget rToken listed for this ticker"
+                      if venue == "bitget" else "No genuine xStocks pool found")
+                     + "; reference price only.", venue)
 
-    model = _model()
+    model = _model(venue)
     expected = model.deviation_bps(median_vol or model.lo)
     half = reference * expected / 10_000
     deviation = (price / reference - 1) * 10_000
@@ -159,7 +193,8 @@ def quote(ticker: str, contexts: dict[str, dict] | None = None,
     if stale_hours is not None and stale_hours > STALE_AFTER_HOURS:
         verdict = STALE
         since = ("at least 24h" if stale_hours >= 24 else f"{stale_hours:.1f}h")
-        advice = (f"Pool has not traded for {since}. Treat the "
+        advice = (f"{'The rToken' if venue == 'bitget' else 'Pool'} has not "
+                  f"traded for {since}. Treat the "
                   f"on-chain quote as absent and price from the reference.")
     elif abs(deviation) > expected:
         verdict = LAGGED
@@ -172,43 +207,53 @@ def quote(ticker: str, contexts: dict[str, dict] | None = None,
                   f"+/-{expected:.0f}bps typical for this liquidity.")
 
     if not gap:
-        advice += " US cash market is open; the pool has a live anchor."
+        advice += " US cash market is open; the quote has a live anchor."
 
     return Quote(ticker, verdict, gap, reference, price, deviation, expected,
-                 reference - half, reference + half, stale_hours, advice)
+                 reference - half, reference + half, stale_hours, advice, venue)
 
 
-def quote_all(tickers: list[str]) -> list[Quote | dict]:
-    """Quote every ticker from one reference call and one pool call, plus one
-    trades call per pool that has been quiet for over an hour. A ticker that
-    fails is reported as an error, never as a verdict."""
+def quote_all(tickers: list[str], venue: str = "solana") -> list[Quote | dict]:
+    """Quote every ticker from one reference call and one venue call, plus
+    one small call per ticker for its last trade where that needs checking. A
+    ticker that fails is reported as an error, never as a verdict."""
     contexts = hl_context()
-    pools = [p for p in (_pool_address(t) for t in tickers) if p]
-    live = xstock_pools_live(pools)
+    if venue == "bitget":
+        live = rtoken_tickers_live()
+    else:
+        pools = [p for p in (_pool_address(t) for t in tickers) if p]
+        live = xstock_pools_live(pools)
     out: list[Quote | dict] = []
     for t in tickers:
         try:
-            out.append(quote(t, contexts, live))
+            out.append(quote(t, contexts, live, venue))
         except Exception as exc:
-            out.append({"ticker": t, "error": f"{type(exc).__name__}: {exc}"})
+            out.append({"ticker": t, "venue": venue,
+                        "error": f"{type(exc).__name__}: {exc}"})
     return out
 
 
-# One sweep serves every caller for five minutes: the local server and the
-# hosted function both answer /api/quotes from here, and the hosted one also
-# tells the CDN to hold the response for the same window.
+# One sweep per venue serves every caller for five minutes: the local server
+# and the hosted function both answer /api/quotes from here, and the hosted one
+# also tells the CDN to hold the response for the same window.
 SWEEP_TTL = 300
-_sweep: dict = {"at": 0.0, "body": None}
+_sweeps: dict[str, dict] = {}
 _sweep_lock = threading.Lock()
 
 
-def sweep_json() -> str:
+def sweep_json(venue: str = "solana") -> str:
+    if venue not in VENUES:
+        raise ValueError(f"unknown venue {venue!r}; use one of {', '.join(VENUES)}")
     with _sweep_lock:
-        if _sweep["body"] and time.time() - _sweep["at"] < SWEEP_TTL:
-            return _sweep["body"]
-        tickers = [t["ticker"] for t in json.loads(PANEL.read_text())["tickers"]]
-        out = [q if isinstance(q, dict) else asdict(q) for q in quote_all(tickers)]
+        hit = _sweeps.get(venue)
+        if hit and time.time() - hit["at"] < SWEEP_TTL:
+            return hit["body"]
+        tickers = [t["ticker"] for t in
+                   json.loads(panel_path(venue).read_text())["tickers"]]
+        out = [q if isinstance(q, dict) else asdict(q)
+               for q in quote_all(tickers, venue)]
         now = time.time()
-        _sweep.update(at=now, body=json.dumps(
-            {"at": int(now * 1000), "every_s": SWEEP_TTL, "quotes": out}))
-        return _sweep["body"]
+        body = json.dumps({"at": int(now * 1000), "venue": venue,
+                           "every_s": SWEEP_TTL, "quotes": out})
+        _sweeps[venue] = {"at": now, "body": body}
+        return body
