@@ -195,10 +195,12 @@ to tell those apart.
 ### Ask Datum (Qwen)
 
 `POST /api/ask {"question": "Can I liquidate TSLA on Bitget right now?"}` answers a
-question in plain English. `oracle/ask.py` gives Qwen (`qwen3.8-max`, through the
-hackathon's endpoint at `hackathon.bitgetops.com/v1`) the live verdicts on both
-venues and the measured history behind each, and asks it to explain them and end
-with an action.
+question in plain English. `oracle/ask.py` gives Qwen (`qwen/qwen3.8-flash` on
+OpenRouter in the hosted demo; the hackathon's endpoint at
+`hackathon.bitgetops.com/v1` works too, set by `LLM_BASE_URL` / `LLM_MODEL`) the
+live verdicts on both venues, the measured history behind each and the venue
+comparisons computed from it, and asks it to explain them and end with an
+action. Reasoning is switched off: the verdict is already decided.
 
 The model explains; Datum decides. It **fails closed**: with no key, a failed
 call, or an answer that names a verdict Datum did not return, the reply is
