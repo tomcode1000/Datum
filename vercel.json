@@ -16,5 +16,5 @@
       "destination": "/api/quote?ticker=:ticker"
     }
   ],
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)runs'"
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)runs' ':(exclude)calls'"
 }

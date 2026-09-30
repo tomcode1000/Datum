@@ -1,0 +1,47 @@
+name: Weekend call
+
+# Friday 20:05 UTC is 16:05 ET (EDT): the call is committed at the close.
+# Monday 14:35 UTC is 10:35 ET: scored one hour after the open.
+# (In EST, from November, both move an hour later in UTC.)
+on:
+  schedule:
+    - cron: "5 20 * * 5"
+    - cron: "35 14 * * 1"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "call or score"
+        required: true
+        default: call
+
+permissions:
+  contents: write
+
+concurrency:
+  group: record-runs
+  cancel-in-progress: false
+
+jobs:
+  weekend-call:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Call or score
+        run: |
+          mode="${{ inputs.mode }}"
+          if [ -z "$mode" ]; then
+            if [ "$(date -u +%u)" = "5" ]; then mode=call; else mode=score; fi
+          fi
+          python scripts/weekend_call.py "$mode"
+      - name: Commit
+        run: |
+          git config user.name "datum-recorder"
+          git config user.email "datum-recorder@users.noreply.github.com"
+          git add calls
+          git diff --cached --quiet && exit 0
+          git commit -m "Weekend call: $(date -u +'%Y-%m-%d %H:%M') UTC"
+          git pull --rebase
+          git push
