@@ -18,8 +18,13 @@ from .service import (PANEL, STALE_AFTER_HOURS, VERDICTS_ORDER, panel_path,
                       quote)
 from .sources import hl_context
 
-QWEN_BASE = os.environ.get("QWEN_BASE_URL", "https://hackathon.bitgetops.com/v1")
-QWEN_MODEL = os.environ.get("QWEN_MODEL", "qwen3.8-max")
+# Any OpenAI-compatible endpoint works. The default is the hackathon's Qwen
+# endpoint; LLM_BASE_URL / LLM_MODEL / LLM_API_KEY point it elsewhere, for
+# example OpenRouter's qwen/qwen3.8-flash, with no code change.
+QWEN_BASE = (os.environ.get("LLM_BASE_URL") or os.environ.get("QWEN_BASE_URL")
+             or "https://hackathon.bitgetops.com/v1")
+QWEN_MODEL = (os.environ.get("LLM_MODEL") or os.environ.get("QWEN_MODEL")
+              or "qwen3.8-max")
 MAX_QUESTION = 400
 
 # Company names a question is likely to use, for the tickers on the page.
@@ -122,7 +127,9 @@ def _qwen(question: str, f: dict, key: str) -> str:
                           "FACTS:\n" + json.dumps(f, indent=1) + "\n\nQUESTION: " + question}]}
     req = urllib.request.Request(
         QWEN_BASE.rstrip("/") + "/chat/completions", data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}",
+                 # OpenRouter attributes traffic by these; other hosts ignore them
+                 "HTTP-Referer": "https://datum-sandy.vercel.app", "X-Title": "Datum"})
     with urllib.request.urlopen(req, timeout=25) as r:
         data = json.load(r)
     return data["choices"][0]["message"]["content"].strip()
@@ -148,7 +155,7 @@ def ask(question: str, ticker: str | None = None) -> dict:
     if not t:
         return {"error": "Name one of the tickers Datum measures: " + ", ".join(sorted(known))}
     f = facts(t)
-    key = os.environ.get("QWEN_API_KEY", "").strip()
+    key = (os.environ.get("LLM_API_KEY") or os.environ.get("QWEN_API_KEY") or "").strip()
     reply = {"ticker": t, "question": question, "model": QWEN_MODEL, "facts": f}
     if not key:
         return {**reply, "answer": _fallback(f, "no key"), "llm": False,
