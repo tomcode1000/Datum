@@ -29,6 +29,21 @@ What that weekend shows:
 So for 28 hours of that weekend the pool price sat outside the range the pool's
 own liquidity would predict.
 
+## Step 1b. Same weekend, Bitget's own rToken
+
+Switch the header to **Bitget rTokens** and pick the same weekend. RTSLAUSDT,
+measured against the same reference:
+
+| Figure | Solana xStock | Bitget rToken |
+|---|---|---|
+| Widest gap | +58 bps | +39 bps |
+| Hours outside the band | 28 of 66 | 7 of 56 hours with trades |
+| Gap at the Monday open | −28 bps | about −1 bp |
+
+Bitget holds much closer to the reference. Across the 16 tickers both venues
+share it stays tighter (12.5 to 35.4 bps typical) but corrects more slowly (1h
+slope −0.216 against −0.627; slower on 15 of 16 tickers).
+
 ## Step 2. Check the reference is worth trusting
 
 A gap only matters if the reference is right. Datum checked this before relying
@@ -54,6 +69,15 @@ The answer carries the reference price, the pool price, the deviation, the
 expected band, how long since the pool last traded, and a verdict with plain
 advice. The Cross-ticker page shows the same answer for all 16 tickers at once
 (`/api/quotes`).
+
+## Step 4b. Ask it, about your own position
+
+Open **Ask Datum**, add the position (TSLA, Bitget, 100, liquidation at $330) and
+press **Check my positions**. Datum marks it at the price it trusts, works out
+its value and its distance to liquidation, and Qwen explains the result in plain
+English, ending with the action. A follow-up ("And on the other venue?") keeps
+the context. Datum decides and the model explains: an answer that names a
+verdict Datum did not return is withheld and Datum's own advice is shown.
 
 ## Step 5. The decision
 

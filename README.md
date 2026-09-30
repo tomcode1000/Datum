@@ -207,6 +207,24 @@ call, or an answer that names a verdict Datum did not return, the reply is
 Datum's own advice, marked as such. The model never sees a way to change a
 verdict, and an answer that tries is withheld.
 
+**Your positions.** Add holdings on the Ask Datum page (ticker, venue, quantity,
+and a liquidation price if it is collateral; they stay in the browser). Each is
+marked at the price Datum trusts (the token price when OK, the reference
+otherwise), with its value and its distance to liquidation, all computed in code
+before the model sees them. A position the drifted token price alone would
+liquidate, but the trusted price would not, is flagged first. Follow-up
+questions carry the last three exchanges.
+
+### The weekend call
+
+An out-of-sample test, pre-registered in `scripts/weekend_call.py` and run by
+the *Weekend call* workflow. At the Friday close it snapshots both venues into
+`calls/<date>/CALL.md`; one hour after the Monday open it scores three
+predictions against the hourly run log (drift over the weekend, convergence
+after the open, pull-back of tokens outside their band) and commits
+`RESULT.md`, whichever way it comes out. The commit history timestamps the call
+before the outcome exists.
+
 Who this is for: lending protocols setting collateral haircuts, liquidation
 engines deciding whether a weekend move is real, NAV and portfolio marks, and
 venues carrying tokenized equity risk over weekends.
