@@ -116,6 +116,29 @@ the sharper measure; on a 41-day window it appeared to be (−0.685 vs −0.412)
 that reversed once thin-sample tickers were excluded and the full history used.
 **We make no claim that either dominates.**
 
+### 4. Bitget rTokens: tighter, but slower to correct
+
+The same measurement, run against Bitget's own tokenized stocks (rTokens, spot
+pairs such as `RTSLAUSDT`), over the same weekends and the same reference:
+
+| same 16 tickers | Solana xStocks | Bitget rTokens |
+|---|---|---|
+| tickers pulled back toward the reference at 1h | 16 of 16 | 16 of 16 |
+| mean 1h convergence slope | −0.627 | −0.216 |
+| mean \|deviation\| | 17–124 bps (14 fitted) | 12.5–35.4 bps |
+| slope steeper on Solana | | 15 of 16 tickers |
+
+Across all **77** rTokens with enough data, 68 are pulled back at 1h (mean
+−0.304). Bitget's order book holds much closer to the reference than the Solana
+pools do, but when it is off it corrects more slowly, and weekend volume barely
+predicts by how much: the fitted band runs from about ±30 bps at $1,000/hr to
+about ±19 bps at $1M/hr (R² 0.29, 61 tickers). Each venue is quoted against its
+own fitted band; neither borrows the other's.
+
+To rebuild: `python scripts/build_dataset.py bitget` then
+`python scripts/export_replay.py bitget`, or run the *Build a venue's measured
+panel* workflow on GitHub, which is how the committed files were made.
+
 ## What this is not
 
 **It is not a trading strategy, and we checked.** Median weekend volume ranges
@@ -148,6 +171,11 @@ GET /api/quote/TSLA
 }
 ```
 
+Every GET takes `?venue=solana` (the default) or `?venue=bitget`, and
+`/api/quote/` accepts the ticker, the xStock symbol (`TSLAx`) or the rToken
+symbol (`RTSLAUSDT`). The answer also carries `venue` and `session` (`open`,
+`overnight` or `weekend`, for the US cash market).
+
 `GET /api/quotes` returns the same object for every ticker in the panel. A live
 quote costs one Hyperliquid call and one GeckoTerminal call for all pools at
 once; a pool that has not traded within the hour costs one more call for its
@@ -163,6 +191,19 @@ The band **adapts to liquidity**: TSLA at $5,889/hr gets ±27 bps, AVGO at $32/h
 gets ±90 bps. `STALE` is a distinct verdict from `LAGGED` on purpose — below a
 certain flow a pool is not lagging, it simply has no price, and a consumer needs
 to tell those apart.
+
+### Ask Datum (Qwen)
+
+`POST /api/ask {"question": "Can I liquidate TSLA on Bitget right now?"}` answers a
+question in plain English. `oracle/ask.py` gives Qwen (`qwen3.8-max`, through the
+hackathon's endpoint at `hackathon.bitgetops.com/v1`) the live verdicts on both
+venues and the measured history behind each, and asks it to explain them and end
+with an action.
+
+The model explains; Datum decides. It **fails closed**: with no key, a failed
+call, or an answer that names a verdict Datum did not return, the reply is
+Datum's own advice, marked as such. The model never sees a way to change a
+verdict, and an answer that tries is withheld.
 
 Who this is for: lending protocols setting collateral haircuts, liquidation
 engines deciding whether a weekend move is real, NAV and portfolio marks, and
@@ -187,6 +228,8 @@ discriminates rather than crying wolf.
 | Hyperliquid `info` API | 24/7 equity perps, HIP-3 builder dex `xyz` | none |
 | Jupiter token search | resolves an xStocks symbol to its Solana mint | none |
 | GeckoTerminal | hourly OHLCV per pool, ~5.5 months reachable | none |
+| Bitget spot API | rTokens: hourly candles, live tickers, last trade | none |
+| Qwen (hackathon endpoint) | Ask Datum's written answers only; never a verdict | key, server-side |
 
 **Counterfeit tokens.** A search for `TSLAx` returns four fake mints alongside
 the real one, some priced around $0.000005. Genuine xStocks mints use an `Xs`
@@ -218,6 +261,16 @@ consuming Solana token data by symbol.
   reference is efficient enough to use; it is not ground truth.
 - **n = 14–16 tickers.** A −0.65 cross-sectional correlation on 14 points is
   suggestive, not conclusive.
+- **Bitget's band is nearly flat.** On rTokens, weekend volume explains little
+  of the deviation (R² 0.29 across 61 tickers), so the band there is close to a
+  constant ~±20–30 bps. The page shows the 16 tickers both venues share; the
+  full 77-ticker table is in `panel-bitget.json`.
+- **Bitget's last trade is known to the hour.** Its candles are hourly, so an
+  rToken's `stale_hours` is counted from the end of its last traded hour, a
+  lower bound.
+- **Ask Datum's prose is a model's.** The verdicts and figures it quotes come
+  from Datum; the sentences around them are Qwen's, checked only for naming a
+  verdict Datum did not return and for ending with an action.
 
 ## Layout
 
@@ -225,14 +278,19 @@ consuming Solana token data by symbol.
 oracle/
   http.py       retry, backoff, on-disk cache (history TTL 12h)
   calendar.py   US market hours; explicit DST rules, no tzdata needed
-  sources.py    Hyperliquid / Jupiter / GeckoTerminal
+  sources.py    Hyperliquid / Jupiter / GeckoTerminal / Bitget
   dataset.py    weekend-gap alignment into observations
   model.py      convergence fit per horizon; liquidity -> deviation model
-  service.py    the oracle: fair value, band, staleness, verdict
+  service.py    the oracle: fair value, band, staleness, verdict, per venue
+  ask.py        Ask Datum: Qwen explains the verdicts, fails closed
+  web.py        shared plumbing for the hosted API
 scripts/
-  build_dataset.py   fit and write panel.json
+  build_dataset.py   fit and write panel.json (or panel-bitget.json)
   sensitivity.py     how much the claims depend on ticker filtering
-  export_replay.py   write ui/replay.json
+  export_replay.py   write ui/replay.json (or ui/replay-bitget.json)
+  resolve_pools.py   write pools.json, the Solana mint and pool per ticker
+  record_run.py      append a live sweep to runs/ (hourly, via GitHub Actions)
   serve.py           API + UI on the standard library
-ui/index.html        replay demo
+api/                 one Vercel function per endpoint
+ui/index.html        the site: replay, live quotes, Ask Datum, both venues
 ```
