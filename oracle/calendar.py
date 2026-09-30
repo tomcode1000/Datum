@@ -81,6 +81,18 @@ def in_weekend_gap(ts_ms: int) -> bool:
     return False
 
 
+def session(ts_ms: int) -> str:
+    """'open' in the 09:30-16:00 ET cash session on a weekday, 'weekend' in
+    the weekend gap, 'overnight' otherwise. Exchange holidays are not
+    modelled, so a holiday reads as a normal weekday."""
+    if in_weekend_gap(ts_ms):
+        return "weekend"
+    d = to_ny(ts_ms)
+    if d.weekday() < 5 and MARKET_OPEN <= d.time() < MARKET_CLOSE:
+        return "open"
+    return "overnight"
+
+
 def weekend_windows(start_ms: int, end_ms: int):
     """Yield (friday_close, monday_open) in epoch ms for each weekend spanned.
 

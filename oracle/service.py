@@ -15,10 +15,11 @@ genuine price discovery rather than something to be arbitraged.
 import json
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-from .calendar import in_weekend_gap
+from .calendar import in_weekend_gap, session
 from .dataset import HOUR_MS
 from .model import LiquidityModel
 from .sources import (ACTIVITY_WINDOWS, hl_context, pool_last_trade_ms,
@@ -65,6 +66,7 @@ class Quote:
     stale_hours: float | None
     advice: str
     venue: str = "solana"
+    session: str = ""              # open | overnight | weekend (US cash market)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
@@ -131,12 +133,22 @@ def _rtoken_state(ticker: str, live: dict[str, dict] | None = None
     row = (live if live is not None else rtoken_tickers_live()).get(rtoken_symbol(ticker))
     if not row or not row.get("lastPr"):
         return None, None, None
-    last = rtoken_last_trade_ms(ticker)
+    last = row["_last_ms"] if "_last_ms" in row else rtoken_last_trade_ms(ticker)
     # Candles are keyed by the hour they open, so the trade was at some point
     # in that hour: counting from its end keeps this a lower bound.
     stale = (24.0 if last is None
              else max(0.0, (time.time() * 1000 - last - HOUR_MS) / HOUR_MS))
     return float(row["lastPr"]), _median_volume(ticker, "bitget"), stale
+
+
+_FAILED = object()
+
+
+def _safe_last_trade(ticker: str):
+    try:
+        return rtoken_last_trade_ms(ticker)
+    except Exception:
+        return _FAILED          # quote() retries it on its own and reports it
 
 
 def _pool_state(ticker: str, live: dict[str, dict] | None = None,
@@ -168,13 +180,15 @@ def quote(ticker: str, contexts: dict[str, dict] | None = None,
     # ...and the rToken symbol ("RTSLAUSDT") for the Bitget venue.
     if ticker.startswith("R") and ticker.endswith("USDT") and ticker[1:-4] in contexts:
         ticker = ticker[1:-4]
-    gap = in_weekend_gap(int(time.time() * 1000))
+    now_ms = int(time.time() * 1000)
+    gap = in_weekend_gap(now_ms)
+    sess = session(now_ms)
 
     ctx = contexts.get(ticker)
     if not ctx:
         return Quote(ticker, NO_REFERENCE, gap, None, None, None, None, None,
                      None, None,
-                     "No 24/7 reference market for this ticker.", venue)
+                     "No 24/7 reference market for this ticker.", venue, sess)
     reference = float(ctx["markPx"])
 
     price, median_vol, stale_hours = _pool_state(ticker, live, venue)
@@ -183,7 +197,7 @@ def quote(ticker: str, contexts: dict[str, dict] | None = None,
                      None, None,
                      ("No Bitget rToken listed for this ticker"
                       if venue == "bitget" else "No genuine xStocks pool found")
-                     + "; reference price only.", venue)
+                     + "; reference price only.", venue, sess)
 
     model = _model(venue)
     expected = model.deviation_bps(median_vol or model.lo)
@@ -206,11 +220,14 @@ def quote(ticker: str, contexts: dict[str, dict] | None = None,
         advice = (f"Quote is {deviation:+.0f}bps vs reference, within the "
                   f"+/-{expected:.0f}bps typical for this liquidity.")
 
-    if not gap:
+    # Only in the cash session does the quote have a live anchor; saying so on
+    # any weekday (as this once did) was false every weeknight.
+    if sess == "open":
         advice += " US cash market is open; the quote has a live anchor."
 
     return Quote(ticker, verdict, gap, reference, price, deviation, expected,
-                 reference - half, reference + half, stale_hours, advice, venue)
+                 reference - half, reference + half, stale_hours, advice, venue,
+                 sess)
 
 
 def quote_all(tickers: list[str], venue: str = "solana") -> list[Quote | dict]:
@@ -220,6 +237,12 @@ def quote_all(tickers: list[str], venue: str = "solana") -> list[Quote | dict]:
     contexts = hl_context()
     if venue == "bitget":
         live = rtoken_tickers_live()
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            lasts = dict(zip(tickers, pool.map(_safe_last_trade, tickers)))
+        for t, last in lasts.items():
+            row = live.get(rtoken_symbol(t))
+            if row is not None and last is not _FAILED:
+                row["_last_ms"] = last
     else:
         pools = [p for p in (_pool_address(t) for t in tickers) if p]
         live = xstock_pools_live(pools)
@@ -241,6 +264,16 @@ _sweeps: dict[str, dict] = {}
 _sweep_lock = threading.Lock()
 
 
+def sweep_tickers(venue: str = "solana") -> list[str]:
+    """The tickers a live sweep covers: Solana's panel, and on another venue
+    the same tickers where that venue measured them, so the two compare."""
+    solana = [t["ticker"] for t in json.loads(PANEL.read_text())["tickers"]]
+    if venue == "solana":
+        return solana
+    measured = {t["ticker"] for t in json.loads(panel_path(venue).read_text())["tickers"]}
+    return [t for t in solana if t in measured]
+
+
 def sweep_json(venue: str = "solana") -> str:
     if venue not in VENUES:
         raise ValueError(f"unknown venue {venue!r}; use one of {', '.join(VENUES)}")
@@ -248,10 +281,8 @@ def sweep_json(venue: str = "solana") -> str:
         hit = _sweeps.get(venue)
         if hit and time.time() - hit["at"] < SWEEP_TTL:
             return hit["body"]
-        tickers = [t["ticker"] for t in
-                   json.loads(panel_path(venue).read_text())["tickers"]]
         out = [q if isinstance(q, dict) else asdict(q)
-               for q in quote_all(tickers, venue)]
+               for q in quote_all(sweep_tickers(venue), venue)]
         now = time.time()
         body = json.dumps({"at": int(now * 1000), "venue": venue,
                            "every_s": SWEEP_TTL, "quotes": out})

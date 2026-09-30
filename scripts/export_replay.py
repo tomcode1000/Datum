@@ -27,6 +27,11 @@ def main() -> None:
     m = panel["model"]
     model = LiquidityModel(m["a"], m["b"], m["r2"], m["volume_lo"], m["volume_hi"])
     tickers = [r["ticker"] for r in panel["tickers"] if r["n"] >= 200]
+    if venue != "solana":
+        # The page compares venues like for like, so another venue shows the
+        # tickers Solana measured. Its fit still uses its whole panel.
+        shared = {r["ticker"] for r in json.loads((ROOT / "panel.json").read_text())["tickers"]}
+        tickers = [t for t in tickers if t in shared]
 
     out = {"venue": venue, "model": m, "tickers": {}}
     for ticker in tickers:

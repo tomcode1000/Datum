@@ -7,7 +7,7 @@
   "functions": {
     "api/*.py": {
       "maxDuration": 30,
-      "includeFiles": "{oracle/**,panel.json,pools.json}"
+      "includeFiles": "{oracle/**,panel*.json,pools.json}"
     }
   },
   "rewrites": [

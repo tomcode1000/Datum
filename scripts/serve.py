@@ -12,6 +12,7 @@ import sys
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -21,23 +22,29 @@ from oracle.service import quote, sweep_json  # noqa: E402
 
 class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
-        if self.path.startswith("/api/quote/"):
-            ticker = self.path.rsplit("/", 1)[-1]
+        path, _, qs = self.path.partition("?")
+        v = (parse_qs(qs).get("venue") or ["solana"])[0].lower()
+        if path.startswith("/api/quote/"):
+            ticker = path.rsplit("/", 1)[-1]
             try:
-                self._json(quote(ticker).to_json())
+                self._json(quote(ticker, venue=v).to_json())
             except Exception as exc:
                 self._json(json.dumps({"error": f"{type(exc).__name__}: {exc}"}),
                            status=500)
             return
-        if self.path == "/api/quotes":
+        if path == "/api/quotes":
             try:
-                self._json(sweep_json())
+                self._json(sweep_json(v))
             except Exception as exc:
                 self._json(json.dumps({"error": f"{type(exc).__name__}: {exc}"}),
                            status=500)
             return
-        if self.path == "/api/panel":
-            self._json((ROOT / "panel.json").read_text())
+        if path == "/api/panel":
+            name = "panel.json" if v == "solana" else f"panel-{v}.json"
+            try:
+                self._json((ROOT / name).read_text())
+            except OSError as exc:
+                self._json(json.dumps({"error": str(exc)}), status=404)
             return
         super().do_GET()
 

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Datum · a weekend oracle for tokenized equities</title>
-<meta name="description" content="Tokenized US stocks trade 24/7. The market that prices them is open 32.5 hours a week. Datum measures how wrong the on-chain price gets in the gap.">
+<meta name="description" content="Tokenized US stocks trade 24/7. The market that prices them is open 32.5 hours a week. Datum measures how wrong the token price gets in the gap, on Solana xStocks and Bitget rTokens.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2300E5FF' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M2 16h20'/%3E%3Cpath d='M4 16c3.4 0 4.2-9 8-9s4.6 9 8 9'/%3E%3C/svg%3E">
 <style>
 /* ===========================================================================
@@ -110,6 +110,14 @@ button,select,input{font:inherit; color:inherit}
 .state-pill[data-state="shut"]{border-color:var(--border);color:var(--muted);
   background:transparent}
 .clock{font-size:13px; color:var(--text-2)}
+.venue{display:inline-flex; height:32px; padding:3px; gap:2px; border-radius:var(--r-pill);
+  border:1px solid var(--border)}
+.venue button{height:24px; padding:0 12px; border:0; border-radius:var(--r-pill); cursor:pointer;
+  background:transparent; color:var(--text-2); font:inherit; font-size:12px; font-weight:500;
+  letter-spacing:.04em}
+.venue button[aria-pressed="true"]{color:var(--primary);
+  background:color-mix(in srgb,var(--primary) 14%,transparent)}
+@media (max-width:900px){.venue button{padding:0 9px}}
 .icon-btn{
   width:36px;height:36px;display:grid;place-items:center;cursor:pointer;
   background:transparent;border:1px solid var(--border);
@@ -450,6 +458,10 @@ a.live-sum:hover .v{color:var(--primary)}
     <span class="hdr-div" aria-hidden="true"></span>
     <span class="descriptor" id="descriptor">Weekend oracle</span>
     <div class="hdr-right">
+      <div class="venue" id="venue" role="group" aria-label="Venue">
+        <button type="button" data-venue="solana" aria-pressed="true">Solana xStocks</button>
+        <button type="button" data-venue="bitget" aria-pressed="false">Bitget rTokens</button>
+      </div>
       <span class="state-pill" id="market-pill" data-state="open">
         <span class="dot" aria-hidden="true"></span><span id="market-text">Market open</span>
       </span>
@@ -483,8 +495,8 @@ a.live-sum:hover .v{color:var(--primary)}
  * Everything below is read from the project's own output (panel.json /
  * replay.json) or from the README's validation section. Nothing is invented.  */
 let PANEL = null;            // the fitted model from /api/panel
-let PANEL_N = null;          // tickers that fit covered (16), against the 14
-                             // with enough weekends to replay on this page
+let PANEL_N = null;          // tickers the fit used: those with at least 200
+                             // weekend observations (Solana 14, Bitget 61)
 /* The fitted liquidity model, preferred from the live service and falling back
    to the copy embedded in replay.json. Nothing about the fit is written down
    here, so the page cannot drift from what the project actually fitted. */
@@ -869,6 +881,24 @@ function wireReadout(box, tk, wk, main, devp) {
    STATE + SHARED PIECES
    =========================================================================== */
 let DATA = null, LOAD_ERR = null, LIVE = null;
+/* Two venues measured against the same 24/7 reference. Everything venue-specific
+   on the page reads from VN(), so switching never leaves a Solana label on a
+   Bitget number. */
+let VENUE = 'solana';
+try {
+  const q = new URLSearchParams(location.search).get('venue');
+  if (q === 'bitget' || q === 'solana') VENUE = q;
+} catch (e) {}
+const VENUES = {
+  solana: {name: 'Solana xStocks', quote: 'On-chain pool', src: 'xStocks on Solana',
+           unit: 'pool', file: 'replay.json',
+           noPool: 'No genuine pool. A search for TSLAx returns four counterfeits, some priced at $0.000005; the backend rejects them rather than quoting one.'},
+  bitget: {name: 'Bitget rTokens', quote: 'Bitget rToken', src: 'rTokens on Bitget spot',
+           unit: 'rToken', file: 'replay-bitget.json',
+           noPool: 'No rToken listed on Bitget for this ticker. Datum returns the reference only, never a guessed price.'}
+};
+const VN = () => VENUES[VENUE];
+const vq = () => 'venue=' + VENUE;
 const S = {ticker: 'TSLA', wi: 0, verdict: 'OK'};
 
 const VERDICTS = [
@@ -914,10 +944,10 @@ function wireControls() {
   if (l) l.onclick = () => { go('#/quote'); };
 }
 
-const LEGEND =
+const legend = () =>
   '<div class="legend">' +
   '<span><i style="border-color:var(--ref);border-top-width:2.4px"></i>Reference (Hyperliquid 24/7 perp)</span>' +
-  '<span><i style="border-color:var(--pool);border-top-width:1.8px"></i>On-chain pool (xStocks on Solana)</span>' +
+  '<span><i style="border-color:var(--pool);border-top-width:1.8px"></i>' + VN().quote + ' (' + VN().src + ')</span>' +
   '<span><i class="band"></i>Expected deviation band</span>' +
   '<span><i class="dash"></i>Monday open</span></div>';
 
@@ -930,14 +960,14 @@ function chartBlock(head) {
       '<div class="readout num"></div>' +
       '<div tabindex="0" role="img" class="chart-box" aria-label="' +
         esc(S.ticker + ', weekend of ' + w.label + '. The reference price and the ' +
-        'on-chain pool price separate while the US cash market is shut, then converge ' +
+        VN().unit + ' price separate while the US cash market is shut, then converge ' +
         'at the Monday open. Widest deviation ' + bps(w.series[main.worst].dev) +
         ' against an expected band of ' + band(t.expected_bps) + '. Use the arrow ' +
         'keys to read each hour.') + '">' +
         '<svg class="chart-svg" viewBox="0 0 ' + CW + ' ' + CH + '">' + main.svg + '</svg>' +
         '<svg class="chart-svg" viewBox="0 0 ' + CW + ' ' + DH + '" style="margin-top:2px">' +
           dev.svg + '</svg>' +
-      '</div>' + LEGEND +
+      '</div>' + legend() +
     '</div>';
   return {html, main, dev};
 }
@@ -1009,7 +1039,7 @@ function quoteCard(kind) {
     '<p style="font-size:14px;line-height:1.6;color:var(--text-2);margin-bottom:18px">' +
       esc(adviceFor(kind, sp)) + '</p>' +
     kvLine('Fair value', usd(sp.ref), 'Hyperliquid 24/7 perp') +
-    kvLine('On-chain quote', usd(sp.pool), 'xStocks on Solana') +
+    kvLine(VN().quote, usd(sp.pool), VN().src) +
     kvLine('Deviation', bps(sp.dev), sp.live ? 'live' : 'replay specimen', true) +
     '<div style="margin-top:4px">' +
       '<div style="font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;' +
@@ -1032,7 +1062,7 @@ function convGloss() {
     ring('info') + '<div><h4 style="font-size:15px">Convergence (1h) is the number to read' +
     '</h4><p style="font-size:14px;line-height:1.6;color:var(--text-2);margin-top:8px">' +
     'It is the slope of the deviation against time once the market reopens. Negative means ' +
-    'the on-chain price moves back toward the reference; <b class="num">−1.000</b> would ' +
+    'the token price moves back toward the reference; <b class="num">−1.000</b> would ' +
     'close the gap entirely within the hour. ' + esc(S.ticker) + ' sits at <b class="num">' +
     conv(t.convergence_1h) + '</b>, and across all ' + FACT.nTickers + ' tickers replayed here ' +
     'the range is <b class="num">' + conv(convRange()[0]) + '</b> to <b class="num">' +
@@ -1099,7 +1129,7 @@ function verdictRows() {
     return '<div class="vrow" data-v="' + v.k + '">' +
       '<div class="who">' + ring(v.icon) + '<div><div class="n">' + v.k + '</div>' +
       '<div class="sub">' + esc(v.sub) + '</div></div></div>' +
-      '<div class="desc">' + esc(v.desc) + '</div>' + ex + '</div>';
+      '<div class="desc">' + esc(v.k === 'NO_POOL' ? VN().noPool : v.desc) + '</div>' + ex + '</div>';
   }).join('');
 }
 function liveSummary() {
@@ -1149,22 +1179,27 @@ function sectionTickers(o) {
   const bandsAll = names.map(k => DATA.tickers[k].expected_bps);
   const meanConv = cs.reduce((a, b) => a + b, 0) / cs.length;
   const allNeg = cs.filter(c => c < 0).length;
+  const devsAll = names.map(k => DATA.tickers[k].mean_abs_dev_bps);
   return '<section style="padding-bottom:52px">' +
     '<div class="eyebrow">' + svg('grid') + 'Cross-ticker evidence</div>' +
     '<div class="split tight" style="padding:0 0 24px">' +
       '<div class="copy"><h2>The divergence was not isolated. It showed up across ' +
         '<span class="tint">all ' + names.length + ' tickers.</span></h2>' +
-        '<p class="lede">Every ticker in the panel separates from its reference during the ' +
-        'gap and closes back toward it at the Monday open. The size differs by an order of ' +
-        'magnitude, which is what the liquidity model is for, but the direction ' +
-        'does not.</p>' +
+        '<p class="lede">' + (allNeg === names.length
+          ? 'Every ticker in the panel separates from the reference during the gap and ' +
+            'closes back toward it once the market reopens.'
+          : allNeg + ' of ' + names.length + ' tickers separate from the reference during ' +
+            'the gap and close back toward it once the market reopens.') + ' The size ranges ' +
+        'from ' + mag(Math.min.apply(null, devsAll)) + ' to ' + mag(Math.max.apply(null, devsAll)) +
+        ' across tickers, which is what the liquidity model is for, but the direction ' +
+        'does not change.</p>' +
         more(o && o.lead ? 'See every ticker' : 'How this was measured',
              o && o.lead ? '#/tickers' : '#/methodology') + '</div>' +
       '<div class="panel">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:20px;' +
           'flex-wrap:wrap;margin-bottom:6px"><span style="font-size:11.5px;letter-spacing:.14em;' +
           'text-transform:uppercase;color:var(--muted)">' + names.length +
-          ' tickers · most recent weekend</span>' + LEGEND.replace('<div class="legend">',
+          ' tickers · most recent weekend</span>' + legend().replace('<div class="legend">',
           '<div class="legend" style="font-size:11.5px">') + '</div>' +
         '<div class="ticks">' + tickerRows() + '</div>' +
         '<div style="display:flex;gap:40px;flex-wrap:wrap;padding-top:20px;margin-top:8px;' +
@@ -1187,7 +1222,7 @@ function sectionTickers(o) {
 function limitationCards() {
   return '<div class="cards three">' +
     card('target', 'What Datum measures',
-      'The distance between the on-chain xStocks price on Solana and the Hyperliquid 24/7 ' +
+      'The distance between a tokenized stock (xStocks on Solana, rTokens on Bitget) and the Hyperliquid 24/7 ' +
       'equity perp, hour by hour, from Friday 16:00 ET to Monday 09:30 ET, and how fast ' +
       'that distance closes once the cash market reopens.') +
     card('ban', 'What it does not claim',
@@ -1196,9 +1231,9 @@ function limitationCards() {
       'eat the spread. It is pricing and risk infrastructure.') +
     card('scale', 'The model fit is soft, and says so',
       'The liquidity-to-deviation model explains <b>R² ' + fix(FACT.r2, 2) + '</b> of the ' +
-      'variance across ' + (FACT.fitN ? '<b>n = ' + FACT.fitN + '</b> tickers in the fitted ' +
-      'panel, ' + FACT.nTickers + ' of which have enough weekends to replay here'
-      : 'the fitted panel') + '. That is indicative, not strong. The band it produces is a ' +
+      'variance across ' + (FACT.fitN ? '<b>n = ' + FACT.fitN + '</b> tickers with enough ' +
+      'weekend data to fit (' + VN().name + ')' : 'the fitted panel') +
+      '. That is indicative, not strong. The band it produces is a ' +
       'reasonable expectation, not a guarantee.') +
     card('drop', 'What was excluded, and why',
       'A ticker enters the panel only with both a genuine pool and a validated 24/7 ' +
@@ -1248,7 +1283,7 @@ function sectionWhy() {
         FACT.refR.toFixed(3) + '. It is price discovery, not noise.') +
       card('db', 'Who is actually reading this price',
         'A lending protocol valuing collateral, a liquidation engine, a NAV process. On a ' +
-        'Saturday each of them reads an on-chain price with no cash-market anchor behind it.') +
+        'Saturday each of them reads a token price with no cash-market anchor behind it.') +
       card('scale', 'It is infrastructure, not a trade',
         'Median weekend volume runs from <b>' + vol(FACT.volLo) + '</b> to <b>' +
         vol(FACT.volHi) + '</b>. Fees and slippage eat the edge, which is why this is sold ' +
@@ -1265,7 +1300,7 @@ function viewOverview() {
       '<div class="copy">' +
         '<div class="eyebrow short">The problem</div>' +
         '<h2>Tokenized stocks never close. <span class="tint">Their market does.</span></h2>' +
-        '<p class="lede">Every weekend the on-chain price drifts with nothing to anchor ' +
+        '<p class="lede">Every weekend the token price drifts with nothing to anchor ' +
           'it. Datum tells you when it can’t be trusted.</p>' +
         '<div style="margin-top:28px;display:flex;gap:12px;flex-wrap:wrap">' +
           '<button class="btn primary" data-go="#/measurement">See the measurement' +
@@ -1365,7 +1400,9 @@ function adviceFor(kind, sp) {
         ? ' Expect convergence over 1 to 12h; price from the reference instead.' : '');
   }
   if (kind === 'STALE') return 'Pool has not traded for over ' + FACT.staleAfterH +
-    ' hours. Treat the on-chain quote as absent and price from the reference.';
+    ' hours. Treat the token quote as absent and price from the reference.';
+  if (kind === 'NO_POOL') return (VENUE === 'bitget' ? 'No Bitget rToken listed for this ticker'
+    : 'No genuine xStocks pool found') + '; reference price only.';
   return VERDICTS.find(x => x.k === kind).advice;
 }
 function specimen(kind) {
@@ -1457,7 +1494,7 @@ function viewQuote() {
       '</div>' +
       '<div class="grid-3">' +
         pricePanel('Reference price', 'Hyperliquid 24/7 perp', usd(sp.ref), 'ref') +
-        pricePanel('On-chain pool price', 'xStocks on Solana', usd(sp.pool), 'pool') +
+        pricePanel(VN().quote + ' price', VN().src, usd(sp.pool), 'pool') +
         '<div class="panel"><div class="k" style="font-size:11.5px;letter-spacing:.12em;' +
           'text-transform:uppercase;color:var(--muted)">Deviation · ' +
           (sp.live ? 'live' : 'replay specimen') + '</div>' +
@@ -1470,9 +1507,9 @@ function viewQuote() {
         ring('bulb') + '<div><h4 style="font-size:15px">What the consumer does with this</h4>' +
         '<p style="font-size:14px;line-height:1.6;color:var(--text-2);margin-top:8px;max-width:86ch">' +
         (S.verdict === 'OK'
-          ? 'Price the position from the on-chain quote. The deviation is inside the band this ' +
+          ? 'Price the position from the token quote. The deviation is inside the band this ' +
             'pool’s liquidity predicts, so the quote carries no more error than usual.'
-          : 'Do not price the position from the on-chain quote. Use the reference and wait: ' +
+          : 'Do not price the position from the token quote. Use the reference and wait: ' +
             'convergence for ' + esc(S.ticker) + ' runs at <b class="num">' +
             conv(t.convergence_1h) + '</b> per hour, and every ticker measured converges.') +
         '</p></div></div></div>';
@@ -1522,7 +1559,7 @@ function absence(kind, v) {
       'fakes, some priced at $0.000005. “No pool” here often means “found some and ' +
       'rejected them”, which is the safer answer.',
     NO_REFERENCE: 'The reference is the datum. Without a validated 24/7 market there is nothing to ' +
-      'measure the on-chain quote against, so Datum returns no measurement rather than a ' +
+      'measure the token quote against, so Datum returns no measurement rather than a ' +
       'confident-looking number.'
   }[kind];
   return '<div data-v="' + kind + '">' +
@@ -1554,7 +1591,7 @@ async function callApi() {
   box.innerHTML = '<div class="panel" style="margin-bottom:20px;color:var(--text-2);' +
     'font-size:14px">Calling <span class="num">/api/quote/' + esc(S.ticker) + '</span>…</div>';
   try {
-    const r = await fetch('/api/quote/' + encodeURIComponent(S.ticker));
+    const r = await fetch('/api/quote/' + encodeURIComponent(S.ticker) + '?' + vq());
     const q = await r.json();
     if (q.error) throw new Error(q.error);
     API = true;
@@ -1565,7 +1602,8 @@ async function callApi() {
       '" style="margin-bottom:20px;display:flex;gap:14px;align-items:flex-start">' +
       '<span class="ring sm" style="color:var(--vc)">' + svg('check') + '</span>' +
       '<div style="font-size:14px;line-height:1.6"><b>Live response</b> · ' +
-      esc(q.ticker) + ' · ' + (q.weekend_gap ? 'weekend gap' : 'US cash market open') +
+      esc(q.ticker) + ' · ' + (q.session === 'open' ? 'US cash market open' : q.weekend_gap ? 'weekend gap'
+        : 'US cash market closed') +
       '<br><span style="color:var(--text-2)">' + esc(q.advice) + '</span></div></div>';
   } catch (e) {
     API = e.message;
@@ -1591,16 +1629,20 @@ function viewTickers() {
 /* Every ticker quoted live in one call. The replay above is measured history;
    this is the oracle answering right now, so it is never mixed into it. */
 let SWEEP = null;            // null = not called, 'loading', {quotes} or {error}
+let SWEEP_GEN = 0;           // bumped on a venue switch so a late answer is dropped
 async function callSweep() {
+  const gen = SWEEP_GEN;
   if (SWEEP === null) { SWEEP = 'loading'; if (current === 'tickers') render(); }
   try {
-    const r = await fetch('/api/quotes');
+    const r = await fetch('/api/quotes?' + vq());
     const d = await r.json();
+    if (gen !== SWEEP_GEN) return;
     if (d.error) throw new Error(d.error);
     SWEEP = d;
     API = true;
-    setTimeout(callSweep, (d.every_s || 300) * 1000);
+    setTimeout(() => { if (gen === SWEEP_GEN) callSweep(); }, (d.every_s || 300) * 1000);
   } catch (e) {
+    if (gen !== SWEEP_GEN) return;
     SWEEP = {error: e.message};
   }
   if (current === 'tickers' || current === 'overview' || current === 'states') render();
@@ -1623,7 +1665,7 @@ function sectionSweep() {
     const count = {};
     qs.forEach(q => { if (q.verdict) count[q.verdict] = (count[q.verdict] || 0) + 1; });
     body = '<div class="lrow head"><div>Ticker</div><div>Verdict</div>' +
-      '<div class="r">Pool</div><div class="r">Reference</div>' +
+      '<div class="r">' + (VENUE === 'bitget' ? 'rToken' : 'Pool') + '</div><div class="r">Reference</div>' +
       '<div class="r">Deviation / band</div><div class="r">Last trade</div></div>' +
       qs.map(q => {
         if (q.error) return '<div class="lrow"><div class="num" style="font-weight:600">' +
@@ -1785,7 +1827,7 @@ function buildNav() {
 function buildFoot() {
   $('#foot').innerHTML =
     foot('link', 'Reference', 'Hyperliquid 24/7 equity perp') +
-    foot('db', 'On-chain', 'xStocks pools on Solana') +
+    foot('db', 'Venue', VN().src) +
     foot('cal', 'Window', 'Fri 16:00 ET → Mon 09:30 ET') +
     foot('scale', 'Model', 'liquidity → expected band, R² ' + fix(FACT.r2, 2) +
       (FACT.fitN ? ', n = ' + FACT.fitN + ' fitted' : '') +
@@ -1863,25 +1905,48 @@ $('#view').innerHTML = '<div style="padding:80px 0;display:grid;place-items:cent
   '<h3>Reading the measured weekends…</h3>' +
   '<p style="color:var(--muted);font-size:14px">replay.json is about 950KB.</p></div>';
 
-fetch('replay.json')
-  .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-  .then(d => {
-    DATA = d;
-    if (!DATA.tickers[S.ticker]) S.ticker = Object.keys(DATA.tickers).sort()[0];
-    S.wi = newest(S.ticker);
-    route();
-    // panel.json is the fitted model itself. Read it from the service when the
-    // service is up; replay.json carries the same block for the offline case.
-    fetch('/api/panel')
-      .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
-      .then(d => {
-        PANEL = d.model;
-        PANEL_N = Array.isArray(d.tickers) ? d.tickers.length : null;
-        API = true; buildFoot(); render();
-      })
-      .catch(() => { buildFoot(); });
-  })
-  .catch(e => { LOAD_ERR = e.message; route(); });
+function paintVenue() {
+  document.querySelectorAll('#venue [data-venue]').forEach(b =>
+    b.setAttribute('aria-pressed', String(b.dataset.venue === VENUE)));
+}
+function loadVenue(v) {
+  VENUE = v;
+  paintVenue();
+  try {
+    const u = new URL(location.href);
+    if (v === 'solana') u.searchParams.delete('venue'); else u.searchParams.set('venue', v);
+    history.replaceState(null, '', u);
+  } catch (e) {}
+  DATA = null; PANEL = null; PANEL_N = null; LIVE = null; LOAD_ERR = null;
+  SWEEP = null; SWEEP_GEN++;
+  Object.keys(QUOTED).forEach(k => delete QUOTED[k]);
+  fetch(VN().file)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(d => {
+      if (VENUE !== v) return;
+      DATA = d;
+      if (!DATA.tickers[S.ticker]) S.ticker = Object.keys(DATA.tickers).sort()[0];
+      S.wi = newest(S.ticker);
+      route();
+      // The fitted model itself. Read it from the service when the service is
+      // up; the replay file carries the same block for the offline case.
+      fetch('/api/panel?' + vq())
+        .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+        .then(d => {
+          if (VENUE !== v) return;
+          PANEL = d.model;
+          // fitted = enough weekend observations to enter the fit (oracle/dataset.py)
+          PANEL_N = Array.isArray(d.tickers) ? d.tickers.filter(t => t.n >= 200).length : null;
+          API = true; buildFoot(); render();
+        })
+        .catch(() => { buildFoot(); });
+    })
+    .catch(e => { if (VENUE === v) { LOAD_ERR = e.message; route(); } });
+}
+document.querySelectorAll('#venue [data-venue]').forEach(b => {
+  b.onclick = () => { if (b.dataset.venue !== VENUE) loadVenue(b.dataset.venue); };
+});
+loadVenue(VENUE);
 </script>
 </body>
 </html>
