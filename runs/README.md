@@ -32,3 +32,5 @@ sweeps* were taken while the US cash market was closed for the weekend.
 | 2026-10-09 | solana | 4 | 1 | 35 | 27 | 2 | 0 | 0 | 0 |
 | 2026-10-10 | bitget | 4 | 4 | 43 | 10 | 11 | 0 | 0 | 0 |
 | 2026-10-10 | solana | 4 | 4 | 37 | 25 | 2 | 0 | 0 | 0 |
+| 2026-10-11 | bitget | 1 | 1 | 9 | 3 | 4 | 0 | 0 | 0 |
+| 2026-10-11 | solana | 1 | 1 | 10 | 6 | 0 | 0 | 0 | 0 |
