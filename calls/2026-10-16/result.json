@@ -1,0 +1,306 @@
+{
+ "scored_at": 1792440499071,
+ "monday": {
+  "at": 1792440499071,
+  "venues": {
+   "solana": {
+    "TSLA": {
+     "verdict": "OK",
+     "deviation_bps": 10.741998247485451,
+     "expected_bps": 25.61593718764332,
+     "reference": 367.71,
+     "pool": 368.1049940175582,
+     "session": "overnight"
+    },
+    "NVDA": {
+     "verdict": "LAGGED",
+     "deviation_bps": 39.833136063847085,
+     "expected_bps": 24.55039941113112,
+     "reference": 217.09,
+     "pool": 217.95473755081005,
+     "session": "overnight"
+    },
+    "HOOD": {
+     "verdict": "OK",
+     "deviation_bps": -8.496643669935189,
+     "expected_bps": 49.779209612673036,
+     "reference": 96.741,
+     "pool": 96.65880261947268,
+     "session": "overnight"
+    },
+    "PLTR": {
+     "verdict": "OK",
+     "deviation_bps": -43.41644393546673,
+     "expected_bps": 76.0405359133362,
+     "reference": 194.21,
+     "pool": 193.3668092423293,
+     "session": "overnight"
+    },
+    "COIN": {
+     "verdict": "LAGGED",
+     "deviation_bps": -64.03425242754723,
+     "expected_bps": 44.94368260646189,
+     "reference": 168.68,
+     "pool": 167.59987023005215,
+     "session": "overnight"
+    },
+    "META": {
+     "verdict": "OK",
+     "deviation_bps": -18.315126267288704,
+     "expected_bps": 67.78489028959058,
+     "reference": 706.44,
+     "pool": 705.1461462199737,
+     "session": "overnight"
+    },
+    "AAPL": {
+     "verdict": "LAGGED",
+     "deviation_bps": 101.40393170909422,
+     "expected_bps": 70.20052536318913,
+     "reference": 342.86,
+     "pool": 346.336735202578,
+     "session": "overnight"
+    },
+    "MSFT": {
+     "verdict": "LAGGED",
+     "deviation_bps": 23.90718143343573,
+     "expected_bps": 11.995748630149894,
+     "reference": 533.48,
+     "pool": 534.7554003151109,
+     "session": "overnight"
+    },
+    "GOOGL": {
+     "verdict": "LAGGED",
+     "deviation_bps": -114.78934188901336,
+     "expected_bps": 54.12741081061309,
+     "reference": 344.81,
+     "pool": 340.85194870232493,
+     "session": "overnight"
+    },
+    "AMZN": {
+     "verdict": "OK",
+     "deviation_bps": 7.146692828494672,
+     "expected_bps": 59.49755697559738,
+     "reference": 262.55,
+     "pool": 262.73763642021214,
+     "session": "overnight"
+    },
+    "MSTR": {
+     "verdict": "OK",
+     "deviation_bps": -19.9198071174278,
+     "expected_bps": 34.64426812456178,
+     "reference": 136.15,
+     "pool": 135.87879182609623,
+     "session": "overnight"
+    },
+    "CRCL": {
+     "verdict": "LAGGED",
+     "deviation_bps": 13.215464143199185,
+     "expected_bps": 11.995748630149894,
+     "reference": 81.473,
+     "pool": 81.5806703510139,
+     "session": "overnight"
+    },
+    "GME": {
+     "verdict": "OK",
+     "deviation_bps": -38.7394346638803,
+     "expected_bps": 47.94499817349298,
+     "reference": 26.416,
+     "pool": 26.313665909391894,
+     "session": "overnight"
+    },
+    "SPCX": {
+     "verdict": "LAGGED",
+     "deviation_bps": -75.51600025262451,
+     "expected_bps": 42.54192853357645,
+     "reference": 148.03,
+     "pool": 146.9121366482604,
+     "session": "overnight"
+    },
+    "AVGO": {
+     "verdict": "OK",
+     "deviation_bps": 25.195517695708602,
+     "expected_bps": 90.20819509156135,
+     "reference": 334.8,
+     "pool": 335.64354593245235,
+     "session": "overnight"
+    },
+    "STRC": {
+     "verdict": "LAGGED",
+     "deviation_bps": 955.6881499642556,
+     "expected_bps": 71.89251949601075,
+     "reference": 98.775,
+     "pool": 108.21480970127195,
+     "session": "overnight"
+    }
+   },
+   "bitget": {
+    "TSLA": {
+     "verdict": "OK",
+     "deviation_bps": 0.8158603247121476,
+     "expected_bps": 27.67254013900017,
+     "reference": 367.71,
+     "pool": 367.74,
+     "session": "overnight"
+    },
+    "NVDA": {
+     "verdict": "OK",
+     "deviation_bps": -0.46063844488464234,
+     "expected_bps": 26.907633779895082,
+     "reference": 217.09,
+     "pool": 217.08,
+     "session": "overnight"
+    },
+    "HOOD": {
+     "verdict": "OK",
+     "deviation_bps": -7.339184006780464,
+     "expected_bps": 19.63507064167101,
+     "reference": 96.741,
+     "pool": 96.67,
+     "session": "overnight"
+    },
+    "PLTR": {
+     "verdict": "OK",
+     "deviation_bps": 0.5149065444620682,
+     "expected_bps": 17.316661948587587,
+     "reference": 194.21,
+     "pool": 194.22,
+     "session": "overnight"
+    },
+    "COIN": {
+     "verdict": "OK",
+     "deviation_bps": 7.114062129476295,
+     "expected_bps": 19.707037527074785,
+     "reference": 168.68,
+     "pool": 168.8,
+     "session": "overnight"
+    },
+    "META": {
+     "verdict": "OK",
+     "deviation_bps": -1.5571032217887026,
+     "expected_bps": 18.415794076734073,
+     "reference": 706.44,
+     "pool": 706.33,
+     "session": "overnight"
+    },
+    "AAPL": {
+     "verdict": "OK",
+     "deviation_bps": 4.374963541968757,
+     "expected_bps": 28.209848698969786,
+     "reference": 342.86,
+     "pool": 343.01,
+     "session": "overnight"
+    },
+    "MSFT": {
+     "verdict": "OK",
+     "deviation_bps": 5.62345355027194,
+     "expected_bps": 18.077573057641583,
+     "reference": 533.48,
+     "pool": 533.78,
+     "session": "overnight"
+    },
+    "GOOGL": {
+     "verdict": "OK",
+     "deviation_bps": -4.060207070559763,
+     "expected_bps": 26.852008469096504,
+     "reference": 344.81,
+     "pool": 344.67,
+     "session": "overnight"
+    },
+    "AMZN": {
+     "verdict": "OK",
+     "deviation_bps": -1.9043991620648626,
+     "expected_bps": 17.733739968080275,
+     "reference": 262.55,
+     "pool": 262.5,
+     "session": "overnight"
+    },
+    "MSTR": {
+     "verdict": "OK",
+     "deviation_bps": -8.813808299670267,
+     "expected_bps": 24.899813452650314,
+     "reference": 136.15,
+     "pool": 136.03,
+     "session": "overnight"
+    },
+    "CRCL": {
+     "verdict": "OK",
+     "deviation_bps": -16.324426497120736,
+     "expected_bps": 23.990000015720792,
+     "reference": 81.473,
+     "pool": 81.34,
+     "session": "overnight"
+    },
+    "GME": {
+     "verdict": "OK",
+     "deviation_bps": 20.442156268927203,
+     "expected_bps": 22.20688353237325,
+     "reference": 26.416,
+     "pool": 26.47,
+     "session": "overnight"
+    },
+    "SPCX": {
+     "verdict": "OK",
+     "deviation_bps": 0.0,
+     "expected_bps": 27.86636180916737,
+     "reference": 148.03,
+     "pool": 148.03,
+     "session": "overnight"
+    },
+    "AVGO": {
+     "verdict": "OK",
+     "deviation_bps": -6.571087216249438,
+     "expected_bps": 26.716177799552682,
+     "reference": 334.8,
+     "pool": 334.58,
+     "session": "overnight"
+    },
+    "STRC": {
+     "verdict": "OK",
+     "deviation_bps": 12.655024044545549,
+     "expected_bps": 22.759514273198246,
+     "reference": 98.775,
+     "pool": 98.9,
+     "session": "overnight"
+    }
+   }
+  }
+ },
+ "results": {
+  "solana": {
+   "friday_close_median_bps": 50.4,
+   "weekend_median_bps": 35.2,
+   "monday_median_bps": 32.0,
+   "weekend_ticker_hours": 256,
+   "outside_band_before_open": [
+    "HOOD",
+    "MSFT",
+    "MSTR",
+    "CRCL",
+    "AVGO",
+    "STRC"
+   ],
+   "closer_after_open": [
+    "HOOD",
+    "MSFT",
+    "MSTR",
+    "CRCL",
+    "AVGO",
+    "STRC"
+   ],
+   "drift": false,
+   "convergence": true,
+   "pullback": true
+  },
+  "bitget": {
+   "friday_close_median_bps": 5.6,
+   "weekend_median_bps": 22.6,
+   "monday_median_bps": 5.0,
+   "weekend_ticker_hours": 256,
+   "outside_band_before_open": [],
+   "closer_after_open": [],
+   "drift": true,
+   "convergence": true,
+   "pullback": null
+  }
+ }
+}
